@@ -22,6 +22,7 @@ The project covers the entire data value chain: **data acquisiton, pre-processin
 ## 🏗️ Architecture
 
 ![Architecture Diagram](docs/architecture_diagram.png)
+(This architecture diagram was created using [Lucidchart][lucidchart_website_link].)
 
 ## 🛠️ Tech Stack
 
@@ -104,3 +105,5 @@ git clone [URL]
 
 
 [zoomcamp_website_link]: https://github.com/DataTalksClub/data-engineering-zoomcamp
+
+[lucidchart_website_link]: https://www.lucidchart.com/pages

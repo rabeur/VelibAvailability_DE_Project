@@ -1,1 +1,16 @@
-dataLake/
+# Data
+data_lake/
+*.parquet
+
+# DB
+.pgdata/
+
+# Jupyter
+.ipynb_checkpoints
+
+# Env
+.env
+
+# Python
+__pycache__/
+*.pyc

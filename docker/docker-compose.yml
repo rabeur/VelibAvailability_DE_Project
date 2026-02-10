@@ -1,0 +1,47 @@
+services:
+
+  postgres:
+    image: postgres:18
+    container_name: velib_postgres
+    environment:
+      POSTGRES_USER: velib
+      POSTGRES_PASSWORD: velib
+      POSTGRES_DB: velib_dw
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  spark:
+    image: apache/spark:3.5.0
+    container_name: velib_spark
+    volumes:
+      - ../data_lake:/opt/data_lake
+      - ../spark_jobs:/opt/spark_jobs
+    ports:
+      - "8080:8080"
+
+  ingestion:
+    build: ../ingestion
+    container_name: velib_ingestion
+    volumes:
+      - ../data_lake:/app/data_lake
+    depends_on:
+      - postgres
+
+  jupyter:
+    image: jupyter/pyspark-notebook:latest
+    container_name: velib_jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - ../notebooks:/home/jovyan/work
+      - ../data_lake:/home/jovyan/data_lake
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+    depends_on:
+      - postgres
+      - spark
+
+volumes:
+  pg_data:

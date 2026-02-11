@@ -44,5 +44,41 @@ services:
     depends_on:
       - postgres
 
+  airflow-webserver:
+    image: apache/airflow:2.9.0
+    container_name: velib_airflow_web
+    depends_on:
+    - airflow-scheduler
+    - postgres
+    environment:
+    - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://velib:velib@postgres:5432/velib_dw
+    - AIRFLOW__CORE__FERNET_KEY=fernetkey123
+    - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+    - ../airflow/dags:/opt/airflow/dags
+    - ../airflow/logs:/opt/airflow/logs
+    - ../airflow/plugins:/opt/airflow/plugins
+    - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+    - "8081:8080"
+
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.0
+    container_name: velib_airflow_scheduler
+    depends_on:
+    - postgres
+    environment:
+    - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://velib:velib@postgres:5432/velib_dw
+    - AIRFLOW__CORE__FERNET_KEY=fernetkey123
+    - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+    - ../airflow/dags:/opt/airflow/dags
+    - ../airflow/logs:/opt/airflow/logs
+    - ../airflow/plugins:/opt/airflow/plugins
+    - /var/run/docker.sock:/var/run/docker.sock
+
 volumes:
   pg_data:

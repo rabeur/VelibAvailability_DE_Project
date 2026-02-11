@@ -46,8 +46,7 @@ Raw Vélib API data (Parquet, Data Lake)
 
 ### Silver Layer
 Cleaned & enriched datasets (Spark)
-- `stations` : [DESCRIPTION]
-- `station_snapshots` : [DESCRIPTION]
+- typage de la colonne coordonnees_geo
 
 ### Gold Layer
 Business models (dbt + PostgreSQL)
@@ -79,9 +78,10 @@ git clone [URL]
 
 [À REMPLIR AU FUR ET MESURE]
 
-### Défis rencontrés
-- [CHALLENGE 1]
-- [CHALLENGE 2]
+### Challenges faced
+- The open data is only a timestamp of the velib' station occupation so i had to create myself an historic to permit analyse
+- I cannot acquired all the data in one API call with json output after exmine the API console i found a api call to extract directly data in parquet file
+- parquet files dont decode gpx data
 
 ### Solutions apportées
 - [SOLUTION 1]

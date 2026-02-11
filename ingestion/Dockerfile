@@ -2,7 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install requests pandas pyarrow
+COPY requirement.txt .
+
+RUN pip install -r requirement.txt
 
 COPY ingest_velib.py .
 

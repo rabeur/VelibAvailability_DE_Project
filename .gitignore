@@ -1,0 +1,19 @@
+# Data
+data_lake/bronze/velib/**/
+*.parquet
+
+# DB
+.pgdata/
+
+# Jupyter
+.ipynb_checkpoints
+
+# Env
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# airflow
+airflow/logs/**/

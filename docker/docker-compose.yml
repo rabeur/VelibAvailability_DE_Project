@@ -55,22 +55,22 @@ services:
     networks:
       - velib_network
 
-  ingestion:
-    build: ../ingestion
-    container_name: velib_ingestion
-    volumes:
-      - ../data_lake:/app/data_lake
-    environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - velib_network
+  # ingestion:
+  #   build: ../ingestion
+  #   container_name: velib_ingestion
+  #   volumes:
+  #     - ../data_lake:/app/data_lake
+  #   environment:
+  #     - POSTGRES_HOST=postgres
+  #     - POSTGRES_PORT=5432
+  #     - POSTGRES_USER=${POSTGRES_USER}
+  #     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+  #     - POSTGRES_DB=${POSTGRES_DB}
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - velib_network
 
   airflow-init:
     image: apache/airflow:2.9.0
@@ -106,6 +106,7 @@ services:
   airflow-scheduler:
     image: apache/airflow:2.9.0
     container_name: velib_airflow_scheduler
+    user: "${AIRFLOW_UID}:${AIRFLOW_GID}"
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -129,6 +130,7 @@ services:
   airflow-webserver:
     image: apache/airflow:2.9.0
     container_name: velib_airflow_web
+    user: "${AIRFLOW_UID}:${AIRFLOW_GID}"
     depends_on:
       airflow-init:
         condition: service_completed_successfully

@@ -89,7 +89,7 @@ with DAG(
     'velib_ingestion_pipeline',
     default_args=default_args,
     description='Ingestion des données Vélib temps réel',
-    schedule_interval='*/1 * * * *',  # Toutes les 15 minutes
+    schedule_interval='*/1 * * * *',  # Toutes les minutes
     catchup=False,
     tags=['velib', 'ingestion', 'bronze'],
 ) as dag:

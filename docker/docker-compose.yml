@@ -1,29 +1,42 @@
 services:
 
   postgres:
-    image: postgres:18
+    image: postgres:17
     container_name: velib_postgres
     environment:
-      POSTGRES_USER: velib
-      POSTGRES_PASSWORD: velib
-      POSTGRES_DB: velib_dw
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ../sql:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U velib -d velib_dw"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - velib_network
 
   spark:
     image: apache/spark:3.5.0
     container_name: velib_spark
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     volumes:
       - ../data_lake:/opt/data_lake
       - ../spark_jobs:/opt/spark_jobs
     ports:
       - "8080:8080"
+      - "7077:7077"
+    networks:
+      - velib_network
 
   jupyter:
     image: jupyter/pyspark-notebook:latest
     container_name: velib_jupyter
+    user: root
     ports:
       - "8888:8888"
     volumes:
@@ -31,54 +44,120 @@ services:
       - ../data_lake:/home/jovyan/data_lake
     environment:
       - JUPYTER_ENABLE_LAB=yes
-      - JUPYTER_TOKEN=velibexplo
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN}
+      - GRANT_SUDO=yes
+      - CHOWN_HOME=yes
     depends_on:
-      - postgres
-      - spark
+      postgres:
+        condition: service_healthy
+      spark:
+        condition: service_started
+    networks:
+      - velib_network
 
   ingestion:
     build: ../ingestion
     container_name: velib_ingestion
     volumes:
       - ../data_lake:/app/data_lake
-    depends_on:
-      - postgres
-
-  airflow-webserver:
-    image: apache/airflow:2.9.0
-    container_name: velib_airflow_web
-    depends_on:
-    - airflow-scheduler
-    - postgres
     environment:
-    - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://velib:velib@postgres:5432/velib_dw
-    - AIRFLOW__CORE__FERNET_KEY=fernetkey123
-    - AIRFLOW__CORE__LOAD_EXAMPLES=False
-    volumes:
-    - ../airflow/dags:/opt/airflow/dags
-    - ../airflow/logs:/opt/airflow/logs
-    - ../airflow/plugins:/opt/airflow/plugins
-    - /var/run/docker.sock:/var/run/docker.sock
-    ports:
-    - "8081:8080"
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - velib_network
 
+  airflow-init:
+    image: apache/airflow:2.9.0
+    container_name: velib_airflow_init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+      - ../airflow/dags:/opt/airflow/dags
+      - ../airflow/logs:/opt/airflow/logs
+      - ../airflow/plugins:/opt/airflow/plugins
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate &&
+        airflow users create \
+          --username ${AIRFLOW_ADMIN_USERNAME} \
+          --password ${AIRFLOW_ADMIN_PASSWORD} \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com || true
+    networks:
+      - velib_network
+    restart: on-failure
 
   airflow-scheduler:
     image: apache/airflow:2.9.0
     container_name: velib_airflow_scheduler
     depends_on:
-    - postgres
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     environment:
     - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://velib:velib@postgres:5432/velib_dw
-    - AIRFLOW__CORE__FERNET_KEY=fernetkey123
+    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
     - AIRFLOW__CORE__LOAD_EXAMPLES=False
     volumes:
     - ../airflow/dags:/opt/airflow/dags
     - ../airflow/logs:/opt/airflow/logs
     - ../airflow/plugins:/opt/airflow/plugins
+    - ../data_lake:/opt/airflow/data_lake
     - /var/run/docker.sock:/var/run/docker.sock
+    command: scheduler
+    networks:
+      - velib_network
+
+  airflow-webserver:
+    image: apache/airflow:2.9.0
+    container_name: velib_airflow_web
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-scheduler:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    environment:
+    - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
+    - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+    - ../airflow/dags:/opt/airflow/dags
+    - ../airflow/logs:/opt/airflow/logs
+    - ../airflow/plugins:/opt/airflow/plugins
+    - ../data_lake:/opt/airflow/data_lake
+    - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+    - "8081:8080"
+    command: webserver
+    networks:
+      - velib_network
+
 
 volumes:
   pg_data:
+
+
+networks:
+  velib_network:
+    driver: bridge

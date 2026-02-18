@@ -20,7 +20,7 @@ def ingest():
     try:
         params = {
             'parquet_compression': 'snappy',
-            'timezone': 'UTC'
+            'timezone': 'CET'
         }
         # API call with timeout and error handling
         response = requests.get(PARQUET_EXPORT_URL, params=params, timeout=120)

@@ -1,5 +1,5 @@
 # Data
-data_lake/
+data_lake/bronze/velib/**/
 *.parquet
 
 # DB
@@ -16,4 +16,4 @@ __pycache__/
 *.pyc
 
 # airflow
-airflow/logs/
+airflow/logs/**/

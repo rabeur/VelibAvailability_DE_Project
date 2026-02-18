@@ -13,15 +13,38 @@ The project covers the entire data value chain: **data acquisiton, pre-processin
 
 ## 🎯 Main Objective
 
-- [ ] Ingest real-time Vélib data every 15 minutes
-- [ ] Store raw data in a data lake like solution
+- [X] Ingest real-time Vélib data every minutes
+- [X] Store raw data in a data lake like solution
 - [ ] Process raw data en store valuable data in a data warehouse
 - [ ] Transform valuable data to hilight business case
 - [ ] Use data vizualisation to show what have been done
 
+## ✅ Progression
+
+### Phase 1 : Infrastructure ✅ COMPLETED
+- [x] Docker Compose with PostgreSQL, Spark, Jupyter, Airflow
+- [x] Exploration Velib' API
+- [x] Fonctionnal Parquet ingestion script
+- [x] Data exploration notebook
+
+### Phase 2 : Ingestion pipeline (IN PROGRESS)
+- [x] Automatisation ofdata ingestion with DAG Airflow pour ingestion automatisée
+- [ ] Monitoring et alerts
+- [ ] Tests data quality
+
+### Phase 3 : Transformations (COMING SOON)
+- [ ] Silver schema (cleanse)
+- [ ] Dbt transformations
+- [ ] Gold schema  (aggregate)
+
+### Phase 4 : Analyse & Viz (COMING SOON)
+- [ ] Dashboard Metabase/Streamlit
+- [ ] Temporal Analysys
+- [ ] Automated reports
+
 ## 🏗️ Architecture
 
-![Architecture Diagram](docs/architecture_diagram.png)
+![Architecture Diagram](docs/diagrams/architecture_diagram.png)
 (This architecture diagram was created using [Lucidchart][lucidchart_website_link].)
 
 ## 🛠️ Tech Stack
@@ -43,6 +66,25 @@ The project covers the entire data value chain: **data acquisiton, pre-processin
 ### Bronze Layer
 Raw Vélib API data (Parquet, Data Lake)
 - `velib_raw_snapshots` :
+  - stationcode
+  - name
+  - is_installed
+  - capacity
+  - numdocksavailable
+  - numbikesavailable
+  - mechanical
+  - ebike
+  - is_renting
+  - is_returning
+  - duedate
+  - coordonnees_geo
+  - nom_arrondissement_communes
+  - code_insee_communes
+  - station_opening_hours
+  - ingestion_timestamp
+  - snapshot_id
+  - hour
+  - ingestion_date
 
 ### Silver Layer
 Cleaned & enriched datasets (Spark)
@@ -76,7 +118,6 @@ git clone [URL]
 
 ## 📚 Learnings & Challenges
 
-[À REMPLIR AU FUR ET MESURE]
 
 ### Challenges faced
 - The open data is only a timestamp of the velib' station occupation so i had to create myself an historic to permit analyse

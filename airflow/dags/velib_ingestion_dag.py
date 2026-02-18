@@ -7,7 +7,7 @@ import pandas as pd
 from io import BytesIO
 import os
 
-# Configuration par défaut du DAG
+# DAG default configuration
 default_args = {
     'owner': 'velib_team',
     'depends_on_past': False,
@@ -20,7 +20,7 @@ default_args = {
 
 def ingest_velib_data(**context):
     """
-    Fonction d'ingestion des données Vélib
+    Velib data ingestion from Paris Open Data API, with metadata enrichment and partitioned storage in Parquet format.
     """
     import pytz
 
@@ -34,21 +34,21 @@ def ingest_velib_data(**context):
 
     print(f"[{timestamp}] Starting Vélib ingestion...")
 
-    # Télécharger le Parquet
+    # Download data in Parquet format
     params = {'parquet_compression': 'snappy', 'timezone': 'CET'}
     response = requests.get(PARQUET_EXPORT_URL, params=params, timeout=120)
     response.raise_for_status()
 
     print(f"Downloaded {len(response.content) / 1024:.2f} KB")
 
-    # Charger dans pandas
+    # Load into DataFrame
     dataframe = pd.read_parquet(BytesIO(response.content))
 
-    # Ajouter métadonnées
+    # Add metadata columns
     dataframe["ingestion_timestamp"] = now.isoformat()
     dataframe["snapshot_id"] = timestamp
 
-    # Sauvegarder avec partitionnement
+    # Save to local storage in partitioned format
     base_path = f"/opt/airflow/dags/../data_lake/bronze/velib/ingestion_date={date}/hour={hour}"
     os.makedirs(base_path, exist_ok=True)
 
@@ -66,7 +66,7 @@ def ingest_velib_data(**context):
 
 def validate_data(**context):
     """
-    Validation basique des données ingérées
+    Basic validation checks on the ingested Vélib data, ensuring non-empty dataset and presence of key columns.
     """
     ti = context['ti']
     file_path = ti.xcom_pull(task_ids='ingest_velib', key='file_path')
@@ -74,22 +74,22 @@ def validate_data(**context):
     if not file_path or not os.path.exists(file_path):
         raise ValueError(f"File not found: {file_path}")
 
-    # Charger et valider
+    # Load data for validation
     dataframe = pd.read_parquet(file_path)
 
-    # Tests de qualité
+    # Quality checks
     assert len(dataframe) > 0, "Dataset is empty"
     assert 'stationcode' in dataframe.columns, "Missing stationcode column"
 
     print(f"✅ Validation passed: {len(dataframe)} records")
     return True
 
-# Définition du DAG
+# DAG definition
 with DAG(
     'velib_ingestion_pipeline',
     default_args=default_args,
-    description='Ingestion des données Vélib temps réel',
-    schedule_interval='*/1 * * * *',  # Toutes les minutes
+    description='Real-time ingestion of Vélib station availability data with metadata enrichment and partitioned storage',
+    schedule_interval='*/1 * * * *',  # every minute
     catchup=False,
     tags=['velib', 'ingestion', 'bronze'],
 ) as dag:
@@ -108,11 +108,11 @@ with DAG(
         provide_context=True,
     )
 
-    # Task 3: Notification de succès (optionnel)
+    # Task 3: success notification
     success_task = BashOperator(
         task_id='notify_success',
         bash_command='echo "✅ Vélib ingestion completed successfully"',
     )
 
-    # Définir les dépendances
+    # dependency chain
     ingest_task >> validate_task >> success_task

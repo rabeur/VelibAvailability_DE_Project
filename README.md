@@ -32,7 +32,7 @@ The project covers the entire data value chain: **data acquisiton, pre-processin
 - [x] Monitoring et alerts
 - [x] Tests data quality
 
-### Phase 3 : Transformations (COMING SOON)
+### Phase 3 : Transformations (IN PROGRESS)
 - [ ] Silver schema (cleanse)
 - [ ] Creation and feeding of the postgreDB
 - [ ] Dbt transformations

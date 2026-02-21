@@ -135,6 +135,7 @@ make first-launch
 
 - [ ] Migration throught GCP/AWS
 - [ ] Add streaming with Kafka
+- [ ] Enable email alerts
 
 ### Local-first, cloud-ready:
 

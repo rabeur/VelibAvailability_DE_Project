@@ -13,8 +13,8 @@ The project covers the entire data value chain: **data acquisiton, pre-processin
 
 ## 🎯 Main Objective
 
-- [X] Ingest real-time Vélib data every minutes
-- [X] Store raw data in a data lake like solution
+- [x] Ingest real-time Vélib data every minutes
+- [x] Store raw data in a data lake like solution
 - [ ] Process raw data en store valuable data in a data warehouse
 - [ ] Transform valuable data to hilight business case
 - [ ] Use data vizualisation to show what have been done
@@ -97,15 +97,20 @@ Business models (dbt + PostgreSQL)
 ## 🚀 Getting Started
 
 ### Prérequis
-- Docker & Docker Compose
-- [AUTRES PRÉREQUIS]
+- Install [Docker desktop][docker_desktop]
 
 ### Installation
 ```bash
-# 1. Cloner le repo
-git clone [URL]
+# 0. Install python
+sudo apt-get update
+sudo apt-get install python3.6
 
-# 2. [VOS ÉTAPES]
+# 1. Clone the repository
+git clone https://github.com/rabeur/VelibAvailability_DE_Project.git
+cd VelibAvailability_DE_Project
+
+# 2. Launch project throught Makefile
+make first-launch
 ```
 
 ## 📈 Métriques & KPIs
@@ -148,3 +153,5 @@ git clone [URL]
 [zoomcamp_website_link]: https://github.com/DataTalksClub/data-engineering-zoomcamp
 
 [lucidchart_website_link]: https://www.lucidchart.com/pages
+
+[docker_desktop]: https://www.docker.com/products/docker-desktop?

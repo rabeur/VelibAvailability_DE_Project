@@ -27,13 +27,14 @@ The project covers the entire data value chain: **data acquisiton, pre-processin
 - [x] Fonctionnal Parquet ingestion script
 - [x] Data exploration notebook
 
-### Phase 2 : Ingestion pipeline (IN PROGRESS)
+### Phase 2 : Ingestion pipeline ✅ COMPLETED
 - [x] Automatisation ofdata ingestion with DAG Airflow pour ingestion automatisée
-- [ ] Monitoring et alerts
-- [ ] Tests data quality
+- [x] Monitoring et alerts
+- [x] Tests data quality
 
 ### Phase 3 : Transformations (COMING SOON)
 - [ ] Silver schema (cleanse)
+- [ ] Creation and feeding of the postgreDB
 - [ ] Dbt transformations
 - [ ] Gold schema  (aggregate)
 
@@ -64,7 +65,7 @@ The project covers the entire data value chain: **data acquisiton, pre-processin
 ## 📁 Data Model
 
 ### Bronze Layer
-Raw Vélib API data (Parquet, Data Lake)
+Raw Velib' API data (Parquet, Data Lake)
 - `velib_raw_snapshots` :
   - stationcode
   - name
@@ -83,8 +84,6 @@ Raw Vélib API data (Parquet, Data Lake)
   - station_opening_hours
   - ingestion_timestamp
   - snapshot_id
-  - hour
-  - ingestion_date
 
 ### Silver Layer
 Cleaned & enriched datasets (Spark)
@@ -113,9 +112,8 @@ cd VelibAvailability_DE_Project
 make first-launch
 ```
 
-## 📈 Métriques & KPIs
+## 📈 Metrics & KPIs
 
-- [LISTE DE VOS KPIs MÉTIER]
 
 ## 🔍 Analyses possibles
 
@@ -128,15 +126,15 @@ make first-launch
 - The open data is only a timestamp of the velib' station occupation so i had to create myself an historic to permit analyse
 - I cannot acquired all the data in one API call with json output after exmine the API console i found a api call to extract directly data in parquet file
 - parquet files dont decode gpx data
+- When adding data_quality script i discovered that a lot of data is inconsistent
 
-### Solutions apportées
+### Solutions founds
 - [SOLUTION 1]
 
 ## 🔮 Futures Evolution
 
-- [ ] Migration vers GCP/AWS
-- [ ] Ajout streaming temps réel avec Kafka
-- [ ] [VOS IDÉES]
+- [ ] Migration throught GCP/AWS
+- [ ] Add streaming with Kafka
 
 ### Local-first, cloud-ready:
 

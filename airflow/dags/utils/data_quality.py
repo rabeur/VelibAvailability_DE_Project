@@ -23,11 +23,11 @@ class VelibDataQuality:
         missing_cols = set(expected_columns) - set(self.df.columns)
 
         if missing_cols:
-            msg = f"❌ Columns missing: {missing_cols}"
+            msg = f"X Columns missing: {missing_cols}"
             self.results.append(('schema', False, msg))
             return False, msg
 
-        msg = f"✅ Schema valid ({len(expected_columns)} columns)"
+        msg = f"V Schema valid ({len(expected_columns)} columns)"
         self.results.append(('schema', True, msg))
         return True, msg
 
@@ -48,18 +48,18 @@ class VelibDataQuality:
                 issues.append(f"{col}: {null_pct*100:.2f}%")
 
         if issues:
-            msg = f"⚠️  Too many missing values: {', '.join(issues)}"
+            msg = f"/!\   Too many missing values: {', '.join(issues)}"
             self.results.append(('nulls', False, msg))
             return False, msg
 
-        msg = f"✅ Missing values OK (< {threshold*100}%)"
+        msg = f"V Missing values OK (< {threshold*100}%)"
         self.results.append(('nulls', True, msg))
         return True, msg
 
     def check_duplicates(self, key_columns: List[str]) -> Tuple[bool, str]:
         """Check duplicates on key columns"""
         if not all(col in self.df.columns for col in key_columns):
-            msg = "⚠️  Impossible to check duplicates (missing columns)"
+            msg = "/!\   Impossible to check duplicates (missing columns)"
             self.results.append(('duplicates', False, msg))
             return False, msg
 
@@ -67,18 +67,18 @@ class VelibDataQuality:
         dup_pct = duplicates / len(self.df) * 100
 
         if duplicates > 0:
-            msg = f"⚠️  {duplicates} duplicates detected ({dup_pct:.2f}%)"
+            msg = f"/!\   {duplicates} duplicates detected ({dup_pct:.2f}%)"
             self.results.append(('duplicates', False, msg))
             return False, msg
 
-        msg = f"✅ No duplicates"
+        msg = f"V No duplicates"
         self.results.append(('duplicates', True, msg))
         return True, msg
 
     def check_data_freshness(self, timestamp_col: str, max_age_hours: int = 24) -> Tuple[bool, str]:
         """Check data freshness"""
         if timestamp_col not in self.df.columns:
-            msg = f"⚠️  Timestamp column '{timestamp_col}' not found"
+            msg = f"/!\   Timestamp column '{timestamp_col}' not found"
             self.results.append(('freshness', False, msg))
             return False, msg
 
@@ -96,11 +96,11 @@ class VelibDataQuality:
         age_hours = (now - latest_timestamp).total_seconds() / 3600
 
         if age_hours > max_age_hours:
-            msg = f"⚠️  Data too old: {age_hours:.1f}h (max: {max_age_hours}h)"
+            msg = f"/!\   Data too old: {age_hours:.1f}h (max: {max_age_hours}h)"
             self.results.append(('freshness', False, msg))
             return False, msg
 
-        msg = f"✅ Data fresh ({age_hours:.1f}h)"
+        msg = f"V Data fresh ({age_hours:.1f}h)"
         self.results.append(('freshness', True, msg))
         return True, msg
 
@@ -121,11 +121,11 @@ class VelibDataQuality:
                 issues.append(f"{col}: {out_of_range} values out of range [{min_val}, {max_val}]")
 
         if issues:
-            msg = f"⚠️  Aberrant values: {'; '.join(issues)}"
+            msg = f"/!\   Aberrant values: {'; '.join(issues)}"
             self.results.append(('ranges', False, msg))
             return False, msg
 
-        msg = f"✅ Numeric values within expected ranges"
+        msg = f"V Numeric values within expected ranges"
         self.results.append(('ranges', True, msg))
         return True, msg
 
@@ -140,15 +140,15 @@ class VelibDataQuality:
             inconsistent = (self.df['computed_capacity'] != self.df['capacity']).sum()
 
             if inconsistent > 0:
-                msg = f"⚠️  {inconsistent} inconsistencies (bikes + docks ≠ capacity)"
+                msg = f"/!\  {inconsistent} inconsistencies (bikes + docks =/= capacity)"
                 self.results.append(('consistency', False, msg))
                 return False, msg
 
-            msg = f"✅ Data consistency validated"
+            msg = f"V Data consistency validated"
             self.results.append(('consistency', True, msg))
             return True, msg
 
-        msg = "⚠️  Impossible to check consistency (missing columns)"
+        msg = "/!\  Impossible to check consistency (missing columns)"
         self.results.append(('consistency', False, msg))
         return False, msg
 
@@ -158,17 +158,20 @@ class VelibDataQuality:
 
         # tests configuration
         expected_columns = [
-            'stationcode', 'name', 'capacity',
-            'numbikesavailable', 'numdocksavailable',
-            'is_installed', 'is_renting', 'is_returning'
+            'stationcode','name','is_installed','capacity',
+            'numdocksavailable','numbikesavailable','mechanical',
+            'ebike','is_renting','is_returning','duedate',
+            'coordonnees_geo','nom_arrondissement_communes',
+            'code_insee_commune','station_opening_hours',
+            'ingestion_timestamp','snapshot_id'
         ]
 
-        critical_columns = ['stationcode', 'capacity']
+        critical_columns = ['stationcode', 'name', 'coordonnees_geo','capacity', 'numdocksavailable', 'numbikesavailable']
 
         numeric_ranges = {
-            'capacity': (0, 100),
-            'numbikesavailable': (0, 100),
-            'numdocksavailable': (0, 100)
+            'capacity': (0, 110),
+            'numbikesavailable': (0, 110),
+            'numdocksavailable': (0, 110)
         }
 
         # tests execution

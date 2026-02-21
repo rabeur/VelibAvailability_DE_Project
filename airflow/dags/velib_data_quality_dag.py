@@ -122,7 +122,7 @@ with DAG(
     'velib_data_quality',
     default_args=default_args,
     description='Data Quality checks for Vélib data',
-    schedule_interval='0 */6 * * *',  # Every 6 hours
+    schedule_interval='0/1 * * * *',  # Every minutes cause velib data are updated every minute
     catchup=False,
     tags=['velib', 'data-quality', 'monitoring'],
 ) as dag:

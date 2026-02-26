@@ -30,12 +30,10 @@ CREATE TABLE silver.stations (
     -- Localisation
     latitude DECIMAL(10, 8),
     longitude DECIMAL(11, 8),
-    nom_arrondissement_communes VARCHAR(255),
-    code_insee_commune VARCHAR(10),
+    district_municipality_names VARCHAR(255),
+    insee_municipality_code VARCHAR(10),
 
     -- Métadonnées temporelles
-    first_seen_at TIMESTAMP NOT NULL,
-    last_seen_at TIMESTAMP NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
 
     -- Audit
@@ -45,17 +43,15 @@ CREATE TABLE silver.stations (
 
 -- Index pour améliorer les performances
 CREATE INDEX idx_stations_geo ON silver.stations(latitude, longitude);
-CREATE INDEX idx_stations_arrondissement ON silver.stations(nom_arrondissement_communes);
+CREATE INDEX idx_stations_arrondissement ON silver.stations(district_municipality_names);
 CREATE INDEX idx_stations_active ON silver.stations(is_active);
 CREATE INDEX idx_stations_last_seen ON silver.stations(last_seen_at);
 
 -- Commentaires
-COMMENT ON TABLE silver.stations IS 'Dimension des stations Vélib avec informations statiques';
-COMMENT ON COLUMN silver.stations.station_id IS 'Identifiant unique de la station (stationcode)';
-COMMENT ON COLUMN silver.stations.capacity IS 'Capacité totale de la station';
-COMMENT ON COLUMN silver.stations.first_seen_at IS 'Première apparition de la station dans les données';
-COMMENT ON COLUMN silver.stations.last_seen_at IS 'Dernière apparition de la station dans les données';
-COMMENT ON COLUMN silver.stations.is_active IS 'Indicateur si la station est active (vue récemment)';
+COMMENT ON TABLE silver.stations IS 'Velib stations dimension with static information';
+COMMENT ON COLUMN silver.stations.station_id IS 'Station unique identifier (stationcode)';
+COMMENT ON COLUMN silver.stations.capacity IS 'Station total capacity';
+COMMENT ON COLUMN silver.stations.is_active IS 'Indicator if the station is active (seen recently)';
 
 -- ============================================================================
 -- TABLE: silver.station_availability (Fait)
@@ -92,6 +88,7 @@ CREATE TABLE silver.station_availability (
     -- Métriques calculées
     occupancy_rate DECIMAL(5, 2) CHECK (occupancy_rate BETWEEN 0 AND 100),
     availability_rate DECIMAL(5, 2) CHECK (availability_rate BETWEEN 0 AND 100),
+    service_rate DECIMAL(5, 2) CHECK (service_rate BETWEEN 0 AND 100),
     is_empty BOOLEAN NOT NULL DEFAULT FALSE,
     is_full BOOLEAN NOT NULL DEFAULT FALSE,
     is_operational BOOLEAN NOT NULL DEFAULT TRUE,
@@ -120,12 +117,13 @@ CREATE INDEX idx_availability_operational ON silver.station_availability(is_oper
 -- FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
 
 -- Commentaires
-COMMENT ON TABLE silver.station_availability IS 'Faits de disponibilité des stations par snapshot temporel';
-COMMENT ON COLUMN silver.station_availability.occupancy_rate IS 'Taux occupation = (bikes_available / capacity) * 100';
-COMMENT ON COLUMN silver.station_availability.availability_rate IS 'Taux disponibilité = (docks_available / capacity) * 100';
-COMMENT ON COLUMN silver.station_availability.is_empty IS 'Station vide (0 vélos disponibles)';
-COMMENT ON COLUMN silver.station_availability.is_full IS 'Station pleine (0 places disponibles)';
-COMMENT ON COLUMN silver.station_availability.is_operational IS 'Station opérationnelle (is_installed AND is_renting AND is_returning)';
+COMMENT ON TABLE silver.station_availability IS 'Station availability facts table by timestamp snapshot';
+COMMENT ON COLUMN silver.station_availability.occupancy_rate IS 'Occupation rate = (bikes_available / capacity) * 100';
+COMMENT ON COLUMN silver.station_availability.availability_rate IS 'Avaibility rate = (docks_available / capacity) * 100';
+COMMENT ON COLUMN silver.station_availability.service_rate IS 'Service rate = (bikes_available + docks_available / capacity) * 100';
+COMMENT ON COLUMN silver.station_availability.is_empty IS 'Station empty (0 bikes available)';
+COMMENT ON COLUMN silver.station_availability.is_full IS 'Station full (0 docks available)';
+COMMENT ON COLUMN silver.station_availability.is_operational IS 'Operational station (is_installed AND is_renting AND is_returning)';
 
 -- ============================================================================
 -- VUES UTILITAIRES
@@ -136,7 +134,7 @@ CREATE OR REPLACE VIEW silver.v_latest_station_availability AS
 SELECT DISTINCT ON (sa.station_id)
     s.station_id,
     s.station_name,
-    s.nom_arrondissement_communes,
+    s.district_municipality_names,
     s.capacity,
     sa.snapshot_timestamp,
     sa.num_bikes_available,
@@ -144,16 +142,19 @@ SELECT DISTINCT ON (sa.station_id)
     sa.num_bikes_available_ebike,
     sa.num_docks_available,
     sa.occupancy_rate,
+    sa.availability_rate,
+    sa.service_rate,
     sa.is_empty,
     sa.is_full,
     sa.is_operational,
     s.latitude,
-    s.longitude
+    s.longitude,
+    s.insee_municipality_code
 FROM silver.station_availability sa
 JOIN silver.stations s ON sa.station_id = s.station_id
 ORDER BY sa.station_id, sa.snapshot_timestamp DESC;
 
-COMMENT ON VIEW silver.v_latest_station_availability IS 'Vue de la dernière disponibilité connue pour chaque station';
+COMMENT ON VIEW silver.v_latest_station_availability IS 'View of the latest known availability for each station';
 
 -- Vue : Statistiques quotidiennes par station
 CREATE OR REPLACE VIEW silver.v_daily_station_stats AS
@@ -164,6 +165,7 @@ SELECT
     ROUND(AVG(num_bikes_available), 2) as avg_bikes_available,
     ROUND(AVG(num_docks_available), 2) as avg_docks_available,
     ROUND(AVG(occupancy_rate), 2) as avg_occupancy_rate,
+    ROUND(AVG(service_rate), 2) as avg_service_rate,
     MAX(num_bikes_available) as max_bikes_available,
     MIN(num_bikes_available) as min_bikes_available,
     SUM(CASE WHEN is_empty THEN 1 ELSE 0 END) as times_empty,
@@ -172,7 +174,10 @@ SELECT
 FROM silver.station_availability
 GROUP BY station_id, snapshot_date;
 
-COMMENT ON VIEW silver.v_daily_station_stats IS 'Statistiques quotidiennes agrégées par station';
+COMMENT ON VIEW silver.v_daily_station_stats IS 'Daily aggregated statistics by station';
+COMMENT ON COLUMN silver.v_daily_station_stats.times_empty IS 'Number of times (in minutes) a station was empty (0 bikes available)';
+COMMENT ON COLUMN silver.v_daily_station_stats.times_full IS 'Number of times (in minutes) a station was full (0 docks available)';
+
 
 -- ============================================================================
 -- FONCTIONS UTILITAIRES

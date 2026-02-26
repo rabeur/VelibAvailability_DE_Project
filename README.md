@@ -28,7 +28,7 @@ The project covers the entire data value chain: **data acquisiton, pre-processin
 - [x] Data exploration notebook
 
 ### Phase 2 : Ingestion pipeline ✅ COMPLETED
-- [x] Automatisation ofdata ingestion with DAG Airflow pour ingestion automatisée
+- [x] Automatisation of data ingestion with DAG Airflow
 - [x] Monitoring et alerts
 - [x] Tests data quality
 

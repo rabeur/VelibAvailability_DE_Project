@@ -132,14 +132,12 @@ class VelibBronzeToSilver:
 
             # Localisation (adapter selon votre structure)
             # Si coordonnees_geo est un struct :
-            when(col("coordonnees_geo").isNotNull(),
-                 col("coordonnees_geo.lat")).alias("latitude"),
-            when(col("coordonnees_geo").isNotNull(),
-                 col("coordonnees_geo.lon")).alias("longitude"),
+            when(col("coordonnees_geo").isNotNull(), col("coordonnees_geo.lat")).alias("latitude"),
+            when(col("coordonnees_geo").isNotNull(), col("coordonnees_geo.lon")).alias("longitude"),
 
             # Informations géographiques
-            trim(col("nom_arrondissement_communes")).alias("nom_arrondissement_communes"),
-            trim(col("code_insee_commune")).alias("code_insee_commune"),
+            trim(col("nom_arrondissement_communes")).alias("district_municipality_names"),
+            trim(col("code_insee_commune")).alias("insee_municipality_code"),
 
             # Métadonnées temporelles
             to_timestamp(col("ingestion_timestamp")).alias("ingestion_timestamp"),
@@ -180,6 +178,12 @@ class VelibBronzeToSilver:
                 "availability_rate",
                 when(col("capacity") > 0,
                      spark_round((col("num_docks_available") / col("capacity")) * 100, 2))
+                .otherwise(lit(0.0))
+            ) \
+            .withColumn(
+                "service_rate",
+                when(col("capacity") > 0,
+                     spark_round((col("num_docks_available") + col("num_bikes_available") / col("capacity")) * 100, 2))
                 .otherwise(lit(0.0))
             ) \
             .withColumn("is_empty", col("num_bikes_available") == 0) \
@@ -236,8 +240,8 @@ class VelibBronzeToSilver:
                 col("capacity"),
                 col("latitude"),
                 col("longitude"),
-                col("nom_arrondissement_communes"),
-                col("code_insee_commune"),
+                col("district_municipality_names"),
+                col("insee_municipality_code"),
                 col("snapshot_timestamp").alias("last_seen_at")
             )
 
@@ -279,6 +283,7 @@ class VelibBronzeToSilver:
             col("is_returning"),
             col("occupancy_rate"),
             col("availability_rate"),
+            col("service_rate"),
             col("is_empty"),
             col("is_full"),
             col("is_operational"),

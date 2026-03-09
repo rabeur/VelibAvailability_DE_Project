@@ -96,17 +96,22 @@ Business models (dbt + PostgreSQL)
 ## 🚀 Getting Started
 
 ### Prérequis
-- Install [Docker desktop][docker_desktop]
+- Install [Docker desktop][docker_desktop] or Docker Engine
+- Use WSL or linux terminal
 
 ### Installation
 ```bash
 # 0. Install python
 sudo apt-get update
 sudo apt-get install python3.6
+sudo apt install -y make
 
-# 1. Clone the repository
+# 1. Clone the repository and give permission
 git clone https://github.com/rabeur/VelibAvailability_DE_Project.git
 cd VelibAvailability_DE_Project
+sudo chown -R 50000:0 airflow
+sudo chmod -R 775 airflow
+sudo chown -R 50000:0 data_lake
 
 # 2. Launch project throught Makefile
 make first-launch
@@ -147,6 +152,10 @@ make first-launch
 
 - Airflow = production-grade orchestration
 
+TODO :
+- il faut que lors de l'ingestion le schema des parquet soit assurée et que la position geo soit bien extraite.
+- la data_quality script de l'ingestion doit supprimer les parquet qui n'ont pas le schema souhaité
+-> consequence : la partie silver et ingestion postegresql sera bien plus simple car l'ensemble des parquets utilisés auront les memes metadata
 
 
 [zoomcamp_website_link]: https://github.com/DataTalksClub/data-engineering-zoomcamp

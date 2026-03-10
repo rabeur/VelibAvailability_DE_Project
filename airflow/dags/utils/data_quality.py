@@ -6,6 +6,8 @@ import pandas as pd
 from typing import Dict, List, Tuple
 import logging
 
+import pytz
+
 logger = logging.getLogger(__name__)
 
 
@@ -187,7 +189,7 @@ class VelibDataQuality:
         failed = len(self.results) - passed
 
         report = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(pytz.timezone('Europe/Paris')).isoformat(),
             'total_rows': len(self.df),
             'tests_passed': passed,
             'tests_failed': failed,

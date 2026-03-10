@@ -116,6 +116,8 @@ sudo chown -R 50000:0 data_lake
 
 # 2. Launch project throught Makefile
 make first-launch
+#init bdd
+docker exec -it velib_postgres psql -U velib -d velib_dw -f /docker-entrypoint-initdb.d/02_init_silver_schema.sql
 ```
 
 ## 📈 Metrics & KPIs

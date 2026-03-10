@@ -42,6 +42,8 @@ first-launch:
 		echo "POSTGRES_USER=velib" > $(ENV_FILE); \
 		echo "POSTGRES_PASSWORD=velib" >> $(ENV_FILE); \
 		echo "POSTGRES_DB=velib_dw" >> $(ENV_FILE); \
+		echo "PGADMIN_PASSWORD=admin" >> $(ENV_FILE); \
+		echo "PGADMIN_EMAIL=admin@velib.com" >> $(ENV_FILE); \
 		echo "JUPYTER_TOKEN=velibexplo" >> $(ENV_FILE); \
 		echo "AIRFLOW_ADMIN_USERNAME=admin" >> $(ENV_FILE); \
 		echo "AIRFLOW_ADMIN_PASSWORD=admin" >> $(ENV_FILE); \

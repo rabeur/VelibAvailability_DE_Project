@@ -130,10 +130,9 @@ class VelibBronzeToSilver:
             upper(trim(coalesce(col("is_renting"), lit("OUI")))).alias("is_renting_raw"),
             upper(trim(coalesce(col("is_returning"), lit("OUI")))).alias("is_returning_raw"),
 
-            # Localisation (adapter selon votre structure)
-            # Si coordonnees_geo est un struct :
-            when(col("coordonnees_geo").isNotNull(), col("coordonnees_geo.lat")).alias("latitude"),
-            when(col("coordonnees_geo").isNotNull(), col("coordonnees_geo.lon")).alias("longitude"),
+            # Localisation (coordonnées aplaties)
+            col("lon").cast("double").alias("longitude"),
+            col("lat").cast("double").alias("latitude"),
 
             # Informations géographiques
             trim(col("nom_arrondissement_communes")).alias("district_municipality_names"),
@@ -183,7 +182,7 @@ class VelibBronzeToSilver:
             .withColumn(
                 "service_rate",
                 when(col("capacity") > 0,
-                     spark_round((col("num_docks_available") + col("num_bikes_available") / col("capacity")) * 100, 2))
+                     spark_round(((col("num_docks_available") + col("num_bikes_available")) / col("capacity")) * 100, 2))
                 .otherwise(lit(0.0))
             ) \
             .withColumn("is_empty", col("num_bikes_available") == 0) \

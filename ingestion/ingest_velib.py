@@ -1,14 +1,11 @@
 import requests
 import pandas as pd
-from io import BytesIO
 from datetime import datetime, timezone
 import os
 import sys
 import pytz
 
-
-
-PARQUET_EXPORT_URL = "https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/velib-disponibilite-en-temps-reel/exports/parquet"
+JSON_EXPORT_URL = "https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/velib-disponibilite-en-temps-reel/exports/json"
 
 def ingest():
     paris_tz = pytz.timezone('Europe/Paris')
@@ -18,20 +15,61 @@ def ingest():
     timestamp = now.strftime("%Y%m%d_%H%M%S")
 
     try:
-        params = {
-            'parquet_compression': 'snappy',
-            'timezone': 'CET'
-        }
-        # API call with timeout and error handling
-        response = requests.get(PARQUET_EXPORT_URL, params=params, timeout=120)
+        # API call to get JSON data
+        response = requests.get(JSON_EXPORT_URL, timeout=120)
         response.raise_for_status()
-        parquet_buffer = BytesIO(response.content)
+        data = response.json()
+
+        # Extract the results list - handle if data is dict or list
+        if isinstance(data, dict):
+            stations = data.get('results', [])
+        elif isinstance(data, list):
+            stations = data
+        else:
+            raise ValueError("Unexpected JSON structure")
+
         # Create DataFrame
-        dataframe = pd.read_parquet(parquet_buffer)
+        dataframe = pd.DataFrame(stations)
+
+        # Flatten geographical coordinates
+        if 'coordonnees_geo' in dataframe.columns:
+            dataframe['lon'] = dataframe['coordonnees_geo'].apply(lambda x: x.get('lon') if isinstance(x, dict) else None)
+            dataframe['lat'] = dataframe['coordonnees_geo'].apply(lambda x: x.get('lat') if isinstance(x, dict) else None)
+            dataframe.drop(columns=['coordonnees_geo'], inplace=True)
+
+        # Add ingestion metadata
         dataframe["ingestion_timestamp"] = now.isoformat()
         dataframe["snapshot_id"] = timestamp
-        # save to parquet
-        base_path = f"/app/data_lake/bronze/velib/ingestion_date={date}/hour={hour}"
+
+        # Define and enforce data types for stability
+        dtype_mapping = {
+            'stationcode': 'string',
+            'name': 'string',
+            'is_installed': 'string',
+            'capacity': 'Int64',  # Nullable integer
+            'numdocksavailable': 'Int64',
+            'numbikesavailable': 'Int64',
+            'mechanical': 'Int64',
+            'ebike': 'Int64',
+            'is_renting': 'string',
+            'is_returning': 'string',
+            'duedate': 'string',  # Keep as string for now, could convert to datetime if needed
+            'nom_arrondissement_communes': 'string',
+            'code_insee_commune': 'string',
+            'lon': 'float64',
+            'lat': 'float64',
+            'station_opening_hours': 'string',
+            'ingestion_timestamp': 'string',
+            'snapshot_id': 'string'
+        }
+
+        # Apply dtypes, ignoring any missing columns
+        for col, dtype in dtype_mapping.items():
+            if col in dataframe.columns:
+                dataframe[col] = dataframe[col].astype(dtype)
+
+        # Save to Parquet
+        base_path = f"/app/data_lake/bronze/test/velib/ingestion_date={date}/hour={hour}"
         os.makedirs(base_path, exist_ok=True)
         file_path = f"{base_path}/snapshot_{timestamp}.parquet"
         dataframe.to_parquet(file_path, index=False)

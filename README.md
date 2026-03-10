@@ -78,7 +78,8 @@ Raw Velib' API data (Parquet, Data Lake)
   - is_renting
   - is_returning
   - duedate
-  - coordonnees_geo
+  - lon
+  - lat
   - nom_arrondissement_communes
   - code_insee_communes
   - station_opening_hours
@@ -87,7 +88,7 @@ Raw Velib' API data (Parquet, Data Lake)
 
 ### Silver Layer
 Cleaned & enriched datasets (Spark)
-- typage de la colonne coordonnees_geo
+
 
 ### Gold Layer
 Business models (dbt + PostgreSQL)

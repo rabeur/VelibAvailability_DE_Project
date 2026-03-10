@@ -161,12 +161,12 @@ class VelibDataQuality:
             'stationcode','name','is_installed','capacity',
             'numdocksavailable','numbikesavailable','mechanical',
             'ebike','is_renting','is_returning','duedate',
-            'coordonnees_geo','nom_arrondissement_communes',
-            'code_insee_commune','station_opening_hours',
+            'nom_arrondissement_communes','code_insee_commune',
+            'lon','lat','station_opening_hours',
             'ingestion_timestamp','snapshot_id'
         ]
 
-        critical_columns = ['stationcode', 'name', 'coordonnees_geo','capacity', 'numdocksavailable', 'numbikesavailable']
+        critical_columns = ['stationcode', 'name', 'lon', 'lat','capacity', 'numdocksavailable', 'numbikesavailable']
 
         numeric_ranges = {
             'capacity': (0, 110),

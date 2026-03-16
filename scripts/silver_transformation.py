@@ -72,41 +72,71 @@ def check_prerequisites():
     return all_ok
 
 
-def check_bronze_data(date: str):
-    """Vérifie que les données Bronze existent pour la date"""
-    print(f"\n🔍 Vérification des données Bronze pour {date}...")
+def check_bronze_data(date: str, hour: str | None = None) -> bool:
+    """Vérifie que les données Bronze existent pour l'heure ou la journée"""
+    if hour is not None:
+        print(f"\n🔍 Vérification des données Bronze pour {date} à {hour}h...")
+    else:
+        print(f"\n🔍 Vérification des données Bronze pour {date} (toute la journée)...")
 
-    command = f"""
-    docker exec velib_airflow_scheduler bash -c "
-        if [ -d '/opt/airflow/data_lake/bronze/velib/ingestion_date={date}' ]; then
-            echo 'FOUND'
-        else
-            echo 'NOT_FOUND'
-        fi
-    "
-    """
+    date_part = date
+
+    if hour is not None:
+        command = f"""
+        docker exec velib_airflow_scheduler bash -c "
+            if [ -d '/opt/airflow/data_lake/bronze/velib/ingestion_date={date_part}/hour={hour}' ]; then
+                echo 'FOUND'
+            else
+                echo 'NOT_FOUND'
+            fi
+        "
+        """
+    else:
+        command = f"""
+        docker exec velib_airflow_scheduler bash -c "
+            if [ -d '/opt/airflow/data_lake/bronze/velib/ingestion_date={date_part}' ]; then
+                echo 'FOUND'
+            else
+                echo 'NOT_FOUND'
+            fi
+        "
+        """
 
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
 
     if "FOUND" in result.stdout:
-        # Compter les fichiers
-        count_cmd = f"""
-        docker exec velib_airflow_scheduler bash -c "
-            find /opt/airflow/data_lake/bronze/velib/ingestion_date={date} -name '*.parquet' | wc -l
-        "
-        """
-        count_result = subprocess.run(count_cmd, shell=True, capture_output=True, text=True)
-        file_count = int(count_result.stdout.strip())
-
-        print(f"  ✅ {file_count} fichiers Parquet trouvés")
-        return True
+        if hour is not None:
+            # Compter les fichiers pour cette heure spécifique
+            count_cmd = f"""
+            docker exec velib_airflow_scheduler bash -c "
+                find /opt/airflow/data_lake/bronze/velib/ingestion_date={date_part}/hour={hour} -name '*.parquet' | wc -l
+            "
+            """
+            count_result = subprocess.run(count_cmd, shell=True, capture_output=True, text=True)
+            file_count = int(count_result.stdout.strip())
+            print(f"  ✅ {file_count} fichiers Parquet trouvés pour {hour}h")
+        else:
+            # Compter les fichiers pour toute la date
+            count_cmd = f"""
+            docker exec velib_airflow_scheduler bash -c "
+                find /opt/airflow/data_lake/bronze/velib/ingestion_date={date_part} -name '*.parquet' | wc -l
+            "
+            """
+            count_result = subprocess.run(count_cmd, shell=True, capture_output=True, text=True)
+            file_count = int(count_result.stdout.strip())
+            print(f"  ✅ {file_count} fichiers Parquet trouvés pour la date {date_part}")
+        return file_count > 0
     else:
-        print(f"  ❌ Aucune donnée Bronze pour {date}")
-        print(f"     Chemin vérifié: /opt/airflow/data_lake/bronze/velib/ingestion_date={date}")
+        if hour is not None:
+            print(f"  ❌ Aucune donnée Bronze pour {date_part} à {hour}h")
+            print(f"     Chemin vérifié: /opt/airflow/data_lake/bronze/velib/ingestion_date={date_part}/hour={hour}")
+        else:
+            print(f"  ❌ Aucune donnée Bronze pour {date_part}")
+            print(f"     Chemin vérifié: /opt/airflow/data_lake/bronze/velib/ingestion_date={date_part}")
         return False
 
 
-def run_spark_job(date: str):
+def run_spark_job(date: str, hour: str | None = None) -> bool:
     """Lance le job Spark de transformation"""
     # Télécharger le driver PostgreSQL si nécessaire
     download_cmd = """
@@ -118,6 +148,22 @@ def run_spark_job(date: str):
     """
     subprocess.run(download_cmd, shell=True, check=True)
 
+    if hour is not None:
+        command = f"""
+        docker exec velib_spark /opt/spark/bin/spark-submit \
+            --jars /opt/spark/jars/postgresql-42.7.1.jar \
+            --master local[*] \
+            --driver-memory 2g \
+            --executor-memory 2g \
+            --conf spark.sql.shuffle.partitions=10 \
+            /opt/spark_jobs/bronze_to_silver.py \
+            /opt/data_lake/bronze/velib \
+            {date} \
+            {hour}
+        """
+        return run_command(command, f"Transformation Spark pour {date} à {hour}h")
+
+    # Si aucune hour n'est fournie, traiter toutes les heures de la journée depuis le pipeline BronzeToSilver
     command = f"""
     docker exec velib_spark /opt/spark/bin/spark-submit \
         --jars /opt/spark/jars/postgresql-42.7.1.jar \
@@ -129,23 +175,37 @@ def run_spark_job(date: str):
         /opt/data_lake/bronze/velib \
         {date}
     """
+    return run_command(command, f"Transformation Spark pour toute la date {date}")
 
-    return run_command(command, f"Transformation Spark pour {date}")
 
-
-def validate_silver_data(date: str):
+def validate_silver_data(date: str, hour: str | None = None):
     """Valide que les données ont été chargées dans Silver"""
-    print(f"\n📊 Validation des données Silver pour {date}...")
-
-    query = f"""
-    SELECT
-        COUNT(*) as total_rows,
-        COUNT(DISTINCT station_id) as unique_stations,
-        MIN(snapshot_timestamp) as earliest,
-        MAX(snapshot_timestamp) as latest
-    FROM silver.station_availability
-    WHERE snapshot_timestamp::DATE = '{date}';
-    """
+    if hour is not None:
+        print(f"\n📊 Validation des données Silver pour {date} à {hour}h")
+        hour_timestamp = f"{date} {hour.zfill(2)}:00:00"
+        query = f"""
+        SELECT
+            COUNT(*) as total_rows,
+            COUNT(DISTINCT station_id) as unique_stations,
+            MIN(snapshot_timestamp) as earliest,
+            MAX(snapshot_timestamp) as latest
+        FROM silver.station_availability
+        WHERE snapshot_timestamp >= '{hour_timestamp}'::timestamp
+        AND snapshot_timestamp < ('{hour_timestamp}'::timestamp + interval '1 hour');
+        """
+    else:
+        print(f"\n📊 Validation des données Silver pour la date {date} (toute la journée)")
+        day_start = f"{date} 00:00:00"
+        query = f"""
+        SELECT
+            COUNT(*) as total_rows,
+            COUNT(DISTINCT station_id) as unique_stations,
+            MIN(snapshot_timestamp) as earliest,
+            MAX(snapshot_timestamp) as latest
+        FROM silver.station_availability
+        WHERE snapshot_timestamp >= '{day_start}'::timestamp
+        AND snapshot_timestamp < ('{day_start}'::timestamp + interval '1 day');
+        """
 
     command = f"""docker exec -i velib_postgres psql -U velib -d velib_dw -c "{query}" """
 
@@ -172,14 +232,14 @@ def show_summary():
         ("Nombre total de snapshots",
          "SELECT COUNT(*) as total FROM silver.station_availability;"),
 
-        ("Derniers snapshots par date",
+        ("Derniers snapshots par heure",
          """SELECT
-                snapshot_timestamp::DATE as date,
+                date_trunc('hour', snapshot_timestamp) as hour,
                 COUNT(*) as snapshots,
                 COUNT(DISTINCT station_id) as stations
             FROM silver.station_availability
-            GROUP BY snapshot_timestamp::DATE
-            ORDER BY date DESC
+            GROUP BY date_trunc('hour', snapshot_timestamp)
+            ORDER BY hour DESC
             LIMIT 5;"""),
     ]
 
@@ -197,9 +257,14 @@ def main():
     parser.add_argument(
         '--date',
         type=str,
-        # default=(datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d'),
         default=(datetime.now()).strftime('%Y-%m-%d'),
-        help='Date à traiter (format YYYY-MM-DD, défaut: ajd)'
+        help='Jour à traiter (format YYYY-MM-DD, défaut: jour actuel)'
+    )
+    parser.add_argument(
+        '--hour',
+        type=str,
+        default=None,
+        help='Heure à traiter (format HH, optionnel : si non fournie, traite toute la journée)'
     )
     parser.add_argument(
         '--skip-validation',
@@ -221,7 +286,9 @@ def main():
     ╚════════════════════════════════════════════════════════════════════╝
     """)
 
-    print(f"📅 Date cible: {args.date}")
+    print(f"📅 Jour cible: {args.date}")
+    if args.hour:
+        print(f"📅 Heure cible: {args.hour}h")
 
     # Mode summary-only
     if args.summary_only:
@@ -235,19 +302,28 @@ def main():
             sys.exit(1)
 
     # Vérifier les données Bronze
-    if not check_bronze_data(args.date):
-        print(f"\n❌ Données Bronze manquantes pour {args.date}")
+    if not check_bronze_data(args.date, args.hour):
+        if args.hour:
+            print(f"\n❌ Données Bronze manquantes pour {args.date} à {args.hour}h")
+        else:
+            print(f"\n❌ Données Bronze manquantes pour la date {args.date}")
         print("   Lancez d'abord le DAG d'ingestion Bronze")
         sys.exit(1)
 
     # Lancer le job Spark
-    if not run_spark_job(args.date):
-        print("\n❌ Job Spark échoué")
+    if not run_spark_job(args.date, args.hour):
+        if args.hour:
+            print("\n❌ Job Spark échoué pour l'heure")
+        else:
+            print("\n❌ Job Spark échoué pour la date complète")
         sys.exit(1)
 
     # Valider les résultats
-    if not validate_silver_data(args.date):
-        print("\n❌ Validation échouée")
+    if not validate_silver_data(args.date, args.hour):
+        if args.hour:
+            print("\n❌ Validation échouée pour l'heure")
+        else:
+            print("\n❌ Validation échouée pour la date complète")
         sys.exit(1)
 
     # Afficher le résumé

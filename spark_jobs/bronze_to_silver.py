@@ -12,13 +12,12 @@ Date: 2026-02-26
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, lit, current_timestamp, when, round as spark_round,
-    to_timestamp, coalesce, lower, trim, regexp_replace,
-    from_unixtime, unix_timestamp, date_format, hour, dayofweek,
-    concat_ws, expr, upper, substring
+    to_timestamp, coalesce, trim,
+    from_utc_timestamp, hour,
+    expr, upper
 )
 from pyspark.sql.types import *
-from pyspark.sql.window import Window
-from datetime import datetime, timedelta
+from datetime import datetime
 import sys
 import os
 import logging
@@ -56,6 +55,7 @@ class VelibBronzeToSilver:
             .config("spark.sql.adaptive.enabled", "true") \
             .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
             .config("spark.sql.shuffle.partitions", "10") \
+            .config("spark.sql.session.timeZone", "Europe/Paris") \
             .config("spark.driver.memory", "2g") \
             .config("spark.executor.memory", "2g") \
             .getOrCreate()
@@ -65,13 +65,14 @@ class VelibBronzeToSilver:
         logger.info(f"✅ Spark version: {spark.version}")
         return spark
 
-    def read_bronze_data(self, bronze_path: str, date_filter: str = None):
+    def read_bronze_data(self, bronze_path: str, date_filter: str = None, hour_filter: str = None):
         """
         Lire les données Bronze (Parquet) avec filtre optionnel sur la date
 
         Args:
             bronze_path: Chemin vers les données Bronze
             date_filter: Filtre de date au format YYYY-MM-DD (optionnel)
+            hour_filter: Filtre d'heure au format HH (optionnel)
 
         Returns:
             DataFrame Spark
@@ -79,8 +80,12 @@ class VelibBronzeToSilver:
         logger.info(f"📂 Lecture des données Bronze: {bronze_path}")
 
         if date_filter:
-            full_path = f"{bronze_path}/ingestion_date={date_filter}/**/*.parquet"
-            logger.info(f"   Filtre date: {date_filter}")
+            if hour_filter:
+                full_path = f"{bronze_path}/ingestion_date={date_filter}/hour={hour_filter}/*.parquet"
+                logger.info(f"   Filtre date: {date_filter}, heure: {hour_filter}")
+            else:
+                full_path = f"{bronze_path}/ingestion_date={date_filter}/**/*.parquet"
+                logger.info(f"   Filtre date: {date_filter}")
         else:
             full_path = f"{bronze_path}/**/*.parquet"
 
@@ -139,7 +144,7 @@ class VelibBronzeToSilver:
             trim(col("code_insee_commune")).alias("insee_municipality_code"),
 
             # Métadonnées temporelles
-            to_timestamp(col("ingestion_timestamp")).alias("ingestion_timestamp"),
+            from_utc_timestamp(to_timestamp(col("ingestion_timestamp")), "Europe/Paris").alias("ingestion_timestamp"),
             col("snapshot_id")
         )
 
@@ -167,6 +172,7 @@ class VelibBronzeToSilver:
 
         df_silver = df_clean \
             .withColumn("snapshot_timestamp", col("ingestion_timestamp")) \
+            .withColumn("snapshot_hour", hour(col("snapshot_timestamp"))) \
             .withColumn(
                 "occupancy_rate",
                 when(col("capacity") > 0,
@@ -191,7 +197,7 @@ class VelibBronzeToSilver:
                 "is_operational",
                 col("is_installed") & col("is_renting") & col("is_returning")
             ) \
-            .withColumn("processing_timestamp", current_timestamp())
+            .withColumn("processing_timestamp", from_utc_timestamp(current_timestamp(), "Europe/Paris"))
 
         # ========================================
         # ÉTAPE 4: Filtrage des lignes invalides
@@ -225,10 +231,6 @@ class VelibBronzeToSilver:
         Gère l'upsert en comparant avec les données existantes
         """
         logger.info("🏗️  Extraction de la dimension stations...")
-
-        # Agréger pour avoir une ligne unique par station
-        # On prend la dernière information connue
-        window_spec = Window.partitionBy("station_id").orderBy(col("snapshot_timestamp").desc())
 
         df_stations = df_silver \
             .withColumn("rn", expr("row_number() OVER (PARTITION BY station_id ORDER BY snapshot_timestamp DESC)")) \
@@ -380,13 +382,14 @@ class VelibBronzeToSilver:
             logger.warning(f"  ⚠️  Table stations vide ou inexistante, insertion complète")
             self.write_to_postgres(df_new_stations, "silver.stations", mode="append")
 
-    def run(self, bronze_path: str, date_filter: str = None):
+    def run(self, bronze_path: str, date_filter: str = None, hour_filter: str = None):
         """
         Exécuter le pipeline complet Bronze → Silver
 
         Args:
             bronze_path: Chemin vers les données Bronze
             date_filter: Date au format YYYY-MM-DD (traite uniquement ce jour)
+            hour_filter: Heure au format HH (traite uniquement cette heure)
         """
         logger.info("="*60)
         logger.info("🚀 DÉMARRAGE DU PIPELINE BRONZE → SILVER")
@@ -396,7 +399,7 @@ class VelibBronzeToSilver:
 
         try:
             # 1. Lire Bronze
-            df_bronze = self.read_bronze_data(bronze_path, date_filter)
+            df_bronze = self.read_bronze_data(bronze_path, date_filter, hour_filter)
 
             # 2. Transformer
             df_silver = self.transform_to_silver(df_bronze)
@@ -465,28 +468,61 @@ def main():
     # Chemins par défaut
     default_bronze_path = "/opt/data_lake/bronze/velib"
 
-    # Parsing des arguments
-    if len(sys.argv) < 2:
-        print("Usage: spark-submit bronze_to_silver.py <bronze_path> [date_filter]")
+    # Parsing des arguments flexibles
+    # Modes d'appel acceptés :
+    # 1) spark-submit bronze_to_silver.py 2026-02-26
+    # 2) spark-submit bronze_to_silver.py 2026-02-26 14
+    # 3) spark-submit bronze_to_silver.py /path/to/bronze 2026-02-26
+    # 4) spark-submit bronze_to_silver.py /path/to/bronze 2026-02-26 14
+    args = sys.argv[1:]
+
+    if len(args) == 0:
+        print("Usage: spark-submit bronze_to_silver.py [bronze_path] <date_filter> [hour_filter]")
         print(f"  bronze_path: Chemin vers les données Bronze (défaut: {default_bronze_path})")
-        print(f"  date_filter: Date YYYY-MM-DD (optionnel, traite toutes les dates si omis)")
-        print()
-        print("Exemples:")
-        print(f"  spark-submit bronze_to_silver.py {default_bronze_path}")
-        print(f"  spark-submit bronze_to_silver.py {default_bronze_path} 2026-02-26")
+        print("  date_filter: Date YYYY-MM-DD (obligatoire)")
+        print("  hour_filter: Heure HH (optionnel)")
+        print("Exemple: spark-submit bronze_to_silver.py 2026-02-26 14")
         sys.exit(1)
 
-    bronze_path = sys.argv[1]
-    date_filter = sys.argv[2] if len(sys.argv) > 2 else None
+    date_candidate = args[0]
+    bronze_path = default_bronze_path
+    date_filter = None
+    hour_filter = None
 
-    if date_filter:
-        logger.info(f"📅 Traitement de la date: {date_filter}")
+    # Détecter si le premier argument est un chemin ou une date
+    # Date attendue au format YYYY-MM-DD
+    if len(date_candidate) == 10 and date_candidate[4] == '-' and date_candidate[7] == '-':
+        date_filter = date_candidate
+        if len(args) >= 2:
+            hour_filter = args[1]
+        if len(args) >= 3:
+            print("Erreur: trop d'arguments pour le format date+heure")
+            sys.exit(1)
     else:
-        logger.info(f"📅 Traitement de toutes les dates disponibles")
+        bronze_path = date_candidate
+        if len(args) < 2:
+            print("Erreur: date_filter obligatoire si bronze_path est fourni")
+            sys.exit(1)
+        date_filter = args[1]
+        if len(args) >= 3:
+            hour_filter = args[2]
+        if len(args) >= 4:
+            print("Erreur: trop d'arguments")
+            sys.exit(1)
+
+    if not date_filter:
+        print("Erreur: date_filter est obligatoire (YYYY-MM-DD)")
+        sys.exit(1)
+
+    logger.info(f"📂 Bronze path: {bronze_path}")
+    logger.info(f"📅 Traitement de la date: {date_filter}")
+    if hour_filter:
+        logger.info(f"⏰ Traitement de l'heure: {hour_filter}")
+
 
     # Créer et exécuter le pipeline
     pipeline = VelibBronzeToSilver(postgres_config)
-    result = pipeline.run(bronze_path, date_filter)
+    result = pipeline.run(bronze_path, date_filter, hour_filter)
 
     # Code de sortie
     sys.exit(0 if result["success"] else 1)

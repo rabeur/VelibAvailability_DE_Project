@@ -258,8 +258,8 @@ class VelibBronzeToSilver:
         # Ajouter les métadonnées
         df_stations = df_stations \
             .withColumn("is_active", lit(True)) \
-            .withColumn("created_at", current_timestamp()) \
-            .withColumn("updated_at", current_timestamp())
+            .withColumn("created_at", from_utc_timestamp(current_timestamp(), "Europe/Paris")) \
+            .withColumn("updated_at", from_utc_timestamp(current_timestamp(), "Europe/Paris"))
 
         station_count = df_stations.count()
         logger.info(f"✅ {station_count:,} stations uniques extraites")

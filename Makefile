@@ -50,6 +50,7 @@ first-launch:
 		echo "AIRFLOW_FERNET_KEY=$$(python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")" >> $(ENV_FILE); \
 		echo "AIRFLOW_UID=50000" >> $(ENV_FILE); \
 		echo "AIRFLOW_GID=0" >> $(ENV_FILE); \
+		echo "DOCKER_GID=1001" >> $(ENV_FILE); \
 	else \
 		echo ".env already exist."; \
 	fi

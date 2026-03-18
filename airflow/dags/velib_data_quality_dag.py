@@ -61,7 +61,7 @@ def run_quality_checks(**context):
     data_path = ti.xcom_pull(task_ids='load_data', key='data_path')
 
     if not data_path or not os.path.exists(data_path):
-        raise FileNotFoundError(f"Données introuvables: {data_path}")
+        raise FileNotFoundError(f"Data not found: {data_path}")
 
     # Load data into DataFrame
     df = pd.read_parquet(data_path)
@@ -113,7 +113,7 @@ def run_quality_checks(**context):
 
     # Fail the task if success rate is below threshold (e.g., 80%)
     if report['success_rate'] < 80:
-        raise ValueError(f"❌ Succes rate too low: {report['success_rate']:.1f}%")
+        raise ValueError(f"❌ Success rate too low: {report['success_rate']:.1f}%")
 
     return report_file
 
@@ -126,9 +126,9 @@ def generate_alert(**context):
 
     if tests_failed > 0:
         alert_msg = f"""
-        ⚠️  DATA QUALITY AlERT
+        ⚠️  DATA QUALITY ALERT
 
-        Succes Rate: {success_rate:.1f}%
+        Success Rate: {success_rate:.1f}%
         Tests failed: {tests_failed}
         Timestamp: {datetime.now().isoformat()}
 

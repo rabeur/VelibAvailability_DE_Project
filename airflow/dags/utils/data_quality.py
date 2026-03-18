@@ -60,7 +60,7 @@ class VelibDataQuality:
     def check_duplicates(self, key_columns: List[str]) -> Tuple[bool, str]:
         """Check duplicates on key columns"""
         if not all(col in self.df.columns for col in key_columns):
-            msg = "/!\   Impossible to check duplicates (missing columns)"
+            msg = "/!\   Unable to check duplicates (missing columns)"
             self.results.append(('duplicates', False, msg))
             return False, msg
 
@@ -122,7 +122,7 @@ class VelibDataQuality:
                 issues.append(f"{col}: {out_of_range} values out of range [{min_val}, {max_val}]")
 
         if issues:
-            msg = f"/!\   Aberrant values: {'; '.join(issues)}"
+            msg = f"/!\   Out-of-range values: {'; '.join(issues)}"
             self.results.append(('ranges', False, msg))
             return False, msg
 
@@ -149,7 +149,7 @@ class VelibDataQuality:
             self.results.append(('consistency', True, msg))
             return True, msg
 
-        msg = "/!\  Impossible to check consistency (missing columns)"
+        msg = "/!\  Unable to check consistency (missing columns)"
         self.results.append(('consistency', False, msg))
         return False, msg
 

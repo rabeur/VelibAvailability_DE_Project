@@ -29,16 +29,16 @@ The project covers the entire data value chain: **data acquisiton, pre-processin
 
 ### Phase 2 : Ingestion pipeline ✅ COMPLETED
 - [x] Automatisation of data ingestion with DAG Airflow
-- [x] Monitoring et alerts
+- [x] Monitoring and alerts
 - [x] Tests data quality
 
 ### Phase 3 : Transformations (IN PROGRESS)
-- [ ] Silver schema (cleanse)
-- [ ] Creation and feeding of the postgreDB
+- [x] Silver schema (cleanse)
+- [x] Creation and feeding of the postgreDB
 - [ ] Dbt transformations
 - [ ] Gold schema  (aggregate)
 
-### Phase 4 : Analyse & Viz (COMING SOON)
+### Phase 4 : Analysis & Visualization (COMING SOON)
 - [ ] Dashboard Metabase/Streamlit
 - [ ] Temporal Analysys
 - [ ] Automated reports
@@ -92,11 +92,11 @@ Cleaned & enriched datasets (Spark)
 
 ### Gold Layer
 Business models (dbt + PostgreSQL)
-- [VOS TABLES ANALYTICS]
+- [YOUR ANALYTICS TABLES]
 
 ## 🚀 Getting Started
 
-### Prérequis
+### Prerequisites
 - Install [Docker desktop][docker_desktop] or Docker Engine
 - Use WSL or linux terminal
 
@@ -123,9 +123,9 @@ docker exec -it velib_postgres psql -U velib -d velib_dw -f /docker-entrypoint-i
 ## 📈 Metrics & KPIs
 
 
-## 🔍 Analyses possibles
+## 🔍 Possible Analyses
 
-- [EXEMPLES D'ANALYSES QUE VOTRE PIPELINE PERMET]
+- [EXAMPLES OF ANALYSES ENABLED BY YOUR PIPELINE]
 
 ## 📚 Learnings & Challenges
 
@@ -155,10 +155,10 @@ docker exec -it velib_postgres psql -U velib -d velib_dw -f /docker-entrypoint-i
 
 - Airflow = production-grade orchestration
 
-TODO :
-- il faut que lors de l'ingestion le schema des parquet soit assurée et que la position geo soit bien extraite.
-- la data_quality script de l'ingestion doit supprimer les parquet qui n'ont pas le schema souhaité
--> consequence : la partie silver et ingestion postegresql sera bien plus simple car l'ensemble des parquets utilisés auront les memes metadata
+TODO:
+- During ingestion, the Parquet schema must be enforced and geographic coordinates must be properly extracted.
+- The ingestion data-quality script must remove Parquet files that do not match the expected schema.
+-> Consequence: the Silver step and PostgreSQL ingestion will be much simpler because all Parquet files will share the same metadata.
 
 
 [zoomcamp_website_link]: https://github.com/DataTalksClub/data-engineering-zoomcamp

@@ -2,8 +2,8 @@
 ============================================================================
 BRONZE TO SILVER TRANSFORMATION - Vélib Data Engineering Project
 ============================================================================
-Description: Transformation des données brutes (Bronze) en données
-             nettoyées et normalisées (Silver) avec PySpark
+Description: Transform raw Bronze data into cleaned and normalized
+             Silver data with PySpark
 Author: Data Team
 Date: 2026-02-26
 ============================================================================
@@ -22,7 +22,7 @@ import sys
 import os
 import logging
 
-# Configuration du logging
+# Logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -32,22 +32,22 @@ logger = logging.getLogger(__name__)
 
 class VelibBronzeToSilver:
     """
-    Pipeline de transformation Bronze → Silver pour les données Vélib
+    Bronze -> Silver transformation pipeline for Velib data
     """
 
     def __init__(self, postgres_config: dict):
         """
-        Initialise le pipeline
+        Initialize the pipeline
 
         Args:
-            postgres_config: Configuration PostgreSQL (host, port, db, user, password)
+            postgres_config: PostgreSQL configuration (host, port, db, user, password)
         """
         self.postgres_config = postgres_config
         self.spark = self._create_spark_session()
 
     def _create_spark_session(self) -> SparkSession:
-        """Créer une session Spark configurée"""
-        logger.info("🚀 Création de la session Spark...")
+        """Create a configured Spark session"""
+        logger.info("🚀 Creating Spark session...")
 
         spark = SparkSession.builder \
             .appName("VelibBronzeToSilver") \
@@ -67,91 +67,91 @@ class VelibBronzeToSilver:
 
     def read_bronze_data(self, bronze_path: str, date_filter: str = None, hour_filter: str = None):
         """
-        Lire les données Bronze (Parquet) avec filtre optionnel sur la date
+        Read Bronze data (Parquet) with an optional date filter
 
         Args:
-            bronze_path: Chemin vers les données Bronze
-            date_filter: Filtre de date au format YYYY-MM-DD (optionnel)
-            hour_filter: Filtre d'heure au format HH (optionnel)
+            bronze_path: Path to Bronze data
+            date_filter: Date filter in YYYY-MM-DD format (optional)
+            hour_filter: Hour filter in HH format (optional)
 
         Returns:
             DataFrame Spark
         """
-        logger.info(f"📂 Lecture des données Bronze: {bronze_path}")
+        logger.info(f"📂 Reading Bronze data: {bronze_path}")
 
         if date_filter:
             if hour_filter:
                 full_path = f"{bronze_path}/ingestion_date={date_filter}/hour={hour_filter}/*.parquet"
-                logger.info(f"   Filtre date: {date_filter}, heure: {hour_filter}")
+                logger.info(f"   Date filter: {date_filter}, hour: {hour_filter}")
             else:
                 full_path = f"{bronze_path}/ingestion_date={date_filter}/**/*.parquet"
-                logger.info(f"   Filtre date: {date_filter}")
+                logger.info(f"   Date filter: {date_filter}")
         else:
             full_path = f"{bronze_path}/**/*.parquet"
 
         try:
             df = self.spark.read.parquet(full_path)
             count = df.count()
-            logger.info(f"✅ {count:,} lignes chargées")
-            logger.info(f"📋 Colonnes: {df.columns}")
+            logger.info(f"✅ {count:,} rows loaded")
+            logger.info(f"📋 Columns: {df.columns}")
             return df
         except Exception as e:
-            logger.error(f"❌ Erreur lors de la lecture: {e}")
+            logger.error(f"❌ Read error: {e}")
             raise
 
     def transform_to_silver(self, df_bronze):
         """
-        Transformations Bronze → Silver:
-        1. Nettoyage des données
-        2. Normalisation des colonnes
-        3. Calculs de métriques
-        4. Gestion des types de données
+        Bronze -> Silver transformations:
+        1. Data cleaning
+        2. Column normalization
+        3. Metric calculations
+        4. Data type handling
         """
-        logger.info("🔄 Transformation Bronze → Silver...")
+        logger.info("🔄 Bronze -> Silver transformation...")
 
         # ========================================
-        # ÉTAPE 1: Nettoyage et sélection des colonnes
+        # STEP 1: Clean and select columns
         # ========================================
-        logger.info("  → Étape 1: Nettoyage des colonnes")
+        logger.info("  → Step 1: Cleaning columns")
 
         df_clean = df_bronze.select(
-            # Identifiants
+            # Identifiers
             trim(col("stationcode")).alias("station_id"),
             trim(col("name")).alias("station_name"),
 
-            # Capacité
+            # Capacity
             coalesce(col("capacity").cast("integer"), lit(0)).alias("capacity"),
 
-            # Disponibilité vélos
+            # Bike availability
             coalesce(col("numbikesavailable").cast("integer"), lit(0)).alias("num_bikes_available"),
             coalesce(col("mechanical").cast("integer"), lit(0)).alias("num_bikes_available_mechanical"),
             coalesce(col("ebike").cast("integer"), lit(0)).alias("num_bikes_available_ebike"),
 
-            # Disponibilité places
+            # Dock availability
             coalesce(col("numdocksavailable").cast("integer"), lit(0)).alias("num_docks_available"),
 
-            # Status (booléens sous forme de texte: OUI/NON)
+            # Status (booleans stored as text: YES/NO)
             upper(trim(coalesce(col("is_installed"), lit("OUI")))).alias("is_installed_raw"),
             upper(trim(coalesce(col("is_renting"), lit("OUI")))).alias("is_renting_raw"),
             upper(trim(coalesce(col("is_returning"), lit("OUI")))).alias("is_returning_raw"),
 
-            # Localisation (coordonnées aplaties)
+            # Location (flattened coordinates)
             col("lon").cast("double").alias("longitude"),
             col("lat").cast("double").alias("latitude"),
 
-            # Informations géographiques
+            # Geographic information
             trim(col("nom_arrondissement_communes")).alias("district_municipality_names"),
             trim(col("code_insee_commune")).alias("insee_municipality_code"),
 
-            # Métadonnées temporelles
+            # Time metadata
             from_utc_timestamp(to_timestamp(col("ingestion_timestamp")), "Europe/Paris").alias("ingestion_timestamp"),
             col("snapshot_id")
         )
 
         # ========================================
-        # ÉTAPE 2: Conversion des booléens
+        # STEP 2: Convert booleans
         # ========================================
-        logger.info("  → Étape 2: Conversion des booléens")
+        logger.info("  → Step 2: Converting booleans")
 
         df_clean = df_clean \
             .withColumn("is_installed",
@@ -166,9 +166,9 @@ class VelibBronzeToSilver:
             .drop("is_installed_raw", "is_renting_raw", "is_returning_raw")
 
         # ========================================
-        # ÉTAPE 3: Calcul des métriques
+        # STEP 3: Calculate metrics
         # ========================================
-        logger.info("  → Étape 3: Calcul des métriques")
+        logger.info("  → Step 3: Calculating metrics")
 
         df_silver = df_clean \
             .withColumn("snapshot_timestamp", col("ingestion_timestamp")) \
@@ -200,9 +200,9 @@ class VelibBronzeToSilver:
             .withColumn("processing_timestamp", from_utc_timestamp(current_timestamp(), "Europe/Paris"))
 
         # ========================================
-        # ÉTAPE 4: Filtrage des lignes invalides
+        # STEP 4: Filter invalid rows
         # ========================================
-        logger.info("  → Étape 4: Filtrage des données invalides")
+        logger.info("  → Step 4: Filtering invalid data")
 
         initial_count = df_silver.count()
 
@@ -219,18 +219,18 @@ class VelibBronzeToSilver:
         filtered_count = initial_count - final_count
 
         if filtered_count > 0:
-            logger.warning(f"⚠️  {filtered_count:,} lignes filtrées (invalides)")
+            logger.warning(f"⚠️  {filtered_count:,} rows filtered out (invalid)")
 
-        logger.info(f"✅ {final_count:,} lignes valides après transformation")
+        logger.info(f"✅ {final_count:,} valid rows after transformation")
 
         return df_silver
 
     def extract_stations_dimension(self, df_silver):
         """
-        Extraire la dimension stations (unique par station_id)
-        Gère l'upsert en comparant avec les données existantes
+        Extract the stations dimension (unique by station_id)
+        Handles upsert by comparing with existing data
         """
-        logger.info("🏗️  Extraction de la dimension stations...")
+        logger.info("🏗️  Extracting stations dimension...")
 
         df_stations = df_silver \
             .withColumn("rn", expr("row_number() OVER (PARTITION BY station_id ORDER BY snapshot_timestamp DESC)")) \
@@ -246,31 +246,31 @@ class VelibBronzeToSilver:
                 col("snapshot_timestamp").alias("last_seen_at")
             )
 
-        # Pour first_seen_at, on prend le plus ancien timestamp
+        # For first_seen_at, keep the oldest timestamp
         df_first_seen = df_silver \
             .groupBy("station_id") \
             .agg({"snapshot_timestamp": "min"}) \
             .withColumnRenamed("min(snapshot_timestamp)", "first_seen_at")
 
-        # Joindre pour avoir first_seen_at et last_seen_at
+        # Join to get first_seen_at and last_seen_at
         df_stations = df_stations.join(df_first_seen, "station_id", "left")
 
-        # Ajouter les métadonnées
+        # Add metadata
         df_stations = df_stations \
             .withColumn("is_active", lit(True)) \
             .withColumn("created_at", from_utc_timestamp(current_timestamp(), "Europe/Paris")) \
             .withColumn("updated_at", from_utc_timestamp(current_timestamp(), "Europe/Paris"))
 
         station_count = df_stations.count()
-        logger.info(f"✅ {station_count:,} stations uniques extraites")
+        logger.info(f"✅ {station_count:,} unique stations extracted")
 
         return df_stations
 
     def extract_availability_facts(self, df_silver):
         """
-        Extraire les faits de disponibilité
+        Extract availability facts
         """
-        logger.info("📊 Extraction des faits de disponibilité...")
+        logger.info("📊 Extracting availability facts...")
 
         df_availability = df_silver.select(
             col("station_id"),
@@ -293,20 +293,20 @@ class VelibBronzeToSilver:
         )
 
         facts_count = df_availability.count()
-        logger.info(f"✅ {facts_count:,} faits de disponibilité extraits")
+        logger.info(f"✅ {facts_count:,} availability facts extracted")
 
         return df_availability
 
     def write_to_postgres(self, df, table_name: str, mode: str = "append"):
         """
-        Écrire dans PostgreSQL avec gestion des erreurs
+        Write to PostgreSQL with error handling
 
         Args:
             df: DataFrame Spark
-            table_name: Nom de la table (schema.table)
-            mode: Mode d'écriture ("append", "overwrite")
+            table_name: Table name (schema.table)
+            mode: Write mode ("append", "overwrite")
         """
-        logger.info(f"💾 Écriture dans PostgreSQL: {table_name} (mode={mode})")
+        logger.info(f"💾 Writing to PostgreSQL: {table_name} (mode={mode})")
 
         jdbc_url = f"jdbc:postgresql://{self.postgres_config['host']}:{self.postgres_config['port']}/{self.postgres_config['database']}"
 
@@ -328,22 +328,22 @@ class VelibBronzeToSilver:
                 )
 
             row_count = df.count()
-            logger.info(f"✅ {row_count:,} lignes écrites dans {table_name}")
+            logger.info(f"✅ {row_count:,} rows written to {table_name}")
 
         except Exception as e:
-            logger.error(f"❌ Erreur lors de l'écriture dans {table_name}: {e}")
+            logger.error(f"❌ Write error for {table_name}: {e}")
             raise
 
     def upsert_stations(self, df_new_stations):
         """
-        Upsert des stations: met à jour last_seen_at pour les existantes,
-        insère les nouvelles
+        Upsert stations: update last_seen_at for existing stations,
+        insert new ones
 
-        Note: Nécessite une logique plus sophistiquée pour un vrai SCD Type 2
+        Note: A true SCD Type 2 would require more sophisticated logic
         """
-        logger.info("🔄 Upsert des stations...")
+        logger.info("🔄 Upserting stations...")
 
-        # Lire les stations existantes
+        # Read existing stations
         jdbc_url = f"jdbc:postgresql://{self.postgres_config['host']}:{self.postgres_config['port']}/{self.postgres_config['database']}"
 
         jdbc_properties = {
@@ -357,63 +357,63 @@ class VelibBronzeToSilver:
                 .jdbc(jdbc_url, "silver.stations", properties=jdbc_properties)
 
             existing_count = df_existing.count()
-            logger.info(f"  📊 {existing_count:,} stations existantes dans la base")
+            logger.info(f"  📊 {existing_count:,} existing stations in the database")
 
-            # Identifier les nouvelles stations
+            # Identify new stations
             df_new = df_new_stations.join(
                 df_existing.select("station_id"),
                 "station_id",
-                "left_anti"  # Garde seulement celles qui n'existent pas
+                "left_anti"  # Keep only stations that do not already exist
             )
 
             new_count = df_new.count()
 
             if new_count > 0:
-                logger.info(f"  ➕ {new_count} nouvelles stations à insérer")
+                logger.info(f"  ➕ {new_count} new stations to insert")
                 self.write_to_postgres(df_new, "silver.stations", mode="append")
             else:
-                logger.info("  ✅ Aucune nouvelle station")
+                logger.info("  ✅ No new station")
 
-            # Pour les stations existantes, on pourrait mettre à jour last_seen_at
-            # via une requête SQL UPDATE (pas montré ici pour simplifier)
+            # For existing stations, last_seen_at could be updated
+            # with an SQL UPDATE query (omitted here for simplicity)
 
         except Exception as e:
-            # Si la table n'existe pas encore, on insère tout
-            logger.warning(f"  ⚠️  Table stations vide ou inexistante, insertion complète")
+            # If the table does not exist yet, insert everything
+            logger.warning("  ⚠️  Stations table empty or missing, performing full insert")
             self.write_to_postgres(df_new_stations, "silver.stations", mode="append")
 
     def run(self, bronze_path: str, date_filter: str = None, hour_filter: str = None):
         """
-        Exécuter le pipeline complet Bronze → Silver
+        Run the full Bronze -> Silver pipeline
 
         Args:
-            bronze_path: Chemin vers les données Bronze
-            date_filter: Date au format YYYY-MM-DD (traite uniquement ce jour)
-            hour_filter: Heure au format HH (traite uniquement cette heure)
+            bronze_path: Path to Bronze data
+            date_filter: Date in YYYY-MM-DD format (process only that day)
+            hour_filter: Hour in HH format (process only that hour)
         """
         logger.info("="*60)
-        logger.info("🚀 DÉMARRAGE DU PIPELINE BRONZE → SILVER")
+        logger.info("🚀 STARTING BRONZE -> SILVER PIPELINE")
         logger.info("="*60)
 
         start_time = datetime.now()
 
         try:
-            # 1. Lire Bronze
+            # 1. Read Bronze
             df_bronze = self.read_bronze_data(bronze_path, date_filter, hour_filter)
 
-            # 2. Transformer
+            # 2. Transform
             df_silver = self.transform_to_silver(df_bronze)
 
-            # 3. Extraire dimensions et faits
+            # 3. Extract dimensions and facts
             df_stations = self.extract_stations_dimension(df_silver)
             df_availability = self.extract_availability_facts(df_silver)
 
-            # 4. Écrire dans PostgreSQL
+            # 4. Write to PostgreSQL
 
-            # Stations (upsert pour éviter les doublons)
+            # Stations (upsert to avoid duplicates)
             self.upsert_stations(df_stations)
 
-            # Availability (append toujours, avec contrainte d'unicité en base)
+            # Availability (always append, with a uniqueness constraint in the database)
             self.write_to_postgres(
                 df_availability,
                 "silver.station_availability",
@@ -423,7 +423,7 @@ class VelibBronzeToSilver:
             duration = (datetime.now() - start_time).total_seconds()
 
             logger.info("="*60)
-            logger.info(f"✅ PIPELINE TERMINÉ AVEC SUCCÈS en {duration:.2f}s")
+            logger.info(f"✅ PIPELINE COMPLETED SUCCESSFULLY in {duration:.2f}s")
             logger.info("="*60)
 
             return {
@@ -436,8 +436,8 @@ class VelibBronzeToSilver:
         except Exception as e:
             duration = (datetime.now() - start_time).total_seconds()
             logger.error("="*60)
-            logger.error(f"❌ PIPELINE ÉCHOUÉ après {duration:.2f}s")
-            logger.error(f"Erreur: {e}")
+            logger.error(f"❌ PIPELINE FAILED after {duration:.2f}s")
+            logger.error(f"Error: {e}")
             logger.error("="*60)
 
             import traceback
@@ -454,9 +454,9 @@ class VelibBronzeToSilver:
 
 
 def main():
-    """Point d'entrée du script"""
+    """Script entry point"""
 
-    # Configuration PostgreSQL (à ajuster)
+    # PostgreSQL configuration (adjust as needed)
     postgres_config = {
         "host": os.getenv("POSTGRES_HOST", "postgres"),
         "port": os.getenv("POSTGRES_PORT", "5432"),
@@ -465,11 +465,11 @@ def main():
         "password": os.getenv("POSTGRES_PASSWORD", "velib")
     }
 
-    # Chemins par défaut
+    # Default paths
     default_bronze_path = "/opt/data_lake/bronze/velib"
 
-    # Parsing des arguments flexibles
-    # Modes d'appel acceptés :
+    # Flexible argument parsing
+    # Supported invocation modes:
     # 1) spark-submit bronze_to_silver.py 2026-02-26
     # 2) spark-submit bronze_to_silver.py 2026-02-26 14
     # 3) spark-submit bronze_to_silver.py /path/to/bronze 2026-02-26
@@ -478,10 +478,10 @@ def main():
 
     if len(args) == 0:
         print("Usage: spark-submit bronze_to_silver.py [bronze_path] <date_filter> [hour_filter]")
-        print(f"  bronze_path: Chemin vers les données Bronze (défaut: {default_bronze_path})")
-        print("  date_filter: Date YYYY-MM-DD (obligatoire)")
-        print("  hour_filter: Heure HH (optionnel)")
-        print("Exemple: spark-submit bronze_to_silver.py 2026-02-26 14")
+        print(f"  bronze_path: Path to Bronze data (default: {default_bronze_path})")
+        print("  date_filter: Date YYYY-MM-DD (required)")
+        print("  hour_filter: Hour HH (optional)")
+        print("Example: spark-submit bronze_to_silver.py 2026-02-26 14")
         sys.exit(1)
 
     date_candidate = args[0]
@@ -489,42 +489,42 @@ def main():
     date_filter = None
     hour_filter = None
 
-    # Détecter si le premier argument est un chemin ou une date
-    # Date attendue au format YYYY-MM-DD
+    # Detect whether the first argument is a path or a date
+    # Expected date format: YYYY-MM-DD
     if len(date_candidate) == 10 and date_candidate[4] == '-' and date_candidate[7] == '-':
         date_filter = date_candidate
         if len(args) >= 2:
             hour_filter = args[1]
         if len(args) >= 3:
-            print("Erreur: trop d'arguments pour le format date+heure")
+            print("Error: too many arguments for date+hour format")
             sys.exit(1)
     else:
         bronze_path = date_candidate
         if len(args) < 2:
-            print("Erreur: date_filter obligatoire si bronze_path est fourni")
+            print("Error: date_filter is required when bronze_path is provided")
             sys.exit(1)
         date_filter = args[1]
         if len(args) >= 3:
             hour_filter = args[2]
         if len(args) >= 4:
-            print("Erreur: trop d'arguments")
+            print("Error: too many arguments")
             sys.exit(1)
 
     if not date_filter:
-        print("Erreur: date_filter est obligatoire (YYYY-MM-DD)")
+        print("Error: date_filter is required (YYYY-MM-DD)")
         sys.exit(1)
 
     logger.info(f"📂 Bronze path: {bronze_path}")
-    logger.info(f"📅 Traitement de la date: {date_filter}")
+    logger.info(f"📅 Processing date: {date_filter}")
     if hour_filter:
-        logger.info(f"⏰ Traitement de l'heure: {hour_filter}")
+        logger.info(f"⏰ Processing hour: {hour_filter}")
 
 
-    # Créer et exécuter le pipeline
+    # Create and run the pipeline
     pipeline = VelibBronzeToSilver(postgres_config)
     result = pipeline.run(bronze_path, date_filter, hour_filter)
 
-    # Code de sortie
+    # Exit code
     sys.exit(0 if result["success"] else 1)
 
 

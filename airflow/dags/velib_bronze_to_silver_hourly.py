@@ -1,12 +1,11 @@
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.operators.bash import BashOperator
-import sys
 import os
 from datetime import datetime, timedelta
 import subprocess
-import argparse
+import psycopg2
+from urllib.parse import urlparse
 
 default_args = {
     "owner": "velib_team",
@@ -20,10 +19,10 @@ default_args = {
 
 def run_command(command: str, description: str) -> bool:
     """
-    Exécute une commande shell et affiche le résultat
+    Run a shell command and print the result
 
     Returns:
-        True si succès, False sinon
+        True on success, otherwise False
     """
     print(f"\n{'='*70}")
     print(f"🔧 {description}")
@@ -42,12 +41,12 @@ def run_command(command: str, description: str) -> bool:
         if result.stdout:
             print(result.stdout)
 
-        print(f"✅ {description} - Succès")
+        print(f"✅ {description} - Success")
         return True
 
     except subprocess.CalledProcessError as e:
-        print(f"❌ {description} - Échec")
-        print(f"Code de retour: {e.returncode}")
+        print(f"❌ {description} - Failed")
+        print(f"Return code: {e.returncode}")
         if e.stdout:
             print("STDOUT:", e.stdout)
         if e.stderr:
@@ -56,12 +55,12 @@ def run_command(command: str, description: str) -> bool:
 
 
 def check_bronze_data(**context) -> bool:
-    """Vérifie que les données Bronze existent pour l'heure ou la journée"""
-    dt = context["data_interval_end"].in_timezone("Europe/Paris").subtract(hours=1)  # Vérifie l'heure précédente pour s'assurer que les données sont disponibles
+    """Check whether Bronze data exists for the previous hour"""
+    dt = context["data_interval_end"].in_timezone("Europe/Paris").subtract(hours=1)  # Check the previous hour to ensure the data is available
     date = dt.format("YYYY-MM-DD")
     hour = dt.format("HH")
 
-    print(f"\n🔍 Vérification des données Bronze pour {date} à {hour}h...")
+    print(f"\n🔍 Checking Bronze data for {date} at {hour}:00...")
 
     base_path = "/opt/airflow/data_lake/bronze/velib"
 
@@ -72,15 +71,15 @@ def check_bronze_data(**context) -> bool:
         files = glob.glob(f"{bronze_path}/*.parquet")
         file_count = len(files)
         if file_count > 0:
-            print(f"  ✅ {file_count} fichiers Parquet trouvés pour {hour}h")
+            print(f"  ✅ {file_count} Parquet files found for {hour}:00")
             return True
 
-    print(f"  ❌ Aucune donnée Bronze pour {date} à {hour}h")
-    print(f"     Chemin vérifié: {bronze_path}")
+    print(f"  ❌ No Bronze data for {date} at {hour}:00")
+    print(f"     Checked path: {bronze_path}")
     return False
 
 def run_spark_job(**context) -> bool:
-    """Lance le job Spark via le SDK Python docker (socket /var/run/docker.sock monté)"""
+    """Run the Spark job through the Docker Python SDK (mounted /var/run/docker.sock)"""
     import docker as docker_sdk
 
     dt = context["data_interval_end"].in_timezone("Europe/Paris").subtract(hours=1)
@@ -88,13 +87,13 @@ def run_spark_job(**context) -> bool:
     hour = dt.format("HH")
 
     print(f"\n{'='*70}")
-    print(f"🔧 Transformation Spark pour {date} à {hour}h")
+    print(f"🔧 Spark transformation for {date} at {hour}:00")
     print(f"{'='*70}")
 
     client = docker_sdk.from_env()
     container = client.containers.get("velib_spark")
 
-    # Télécharger le driver PostgreSQL si nécessaire
+    # Download the PostgreSQL driver if needed
     _, dl_output = container.exec_run(
         "bash -c 'if [ ! -f /opt/spark/jars/postgresql-42.7.1.jar ]; then "
         "wget -q https://jdbc.postgresql.org/download/postgresql-42.7.1.jar "
@@ -114,20 +113,20 @@ def run_spark_job(**context) -> bool:
         f"/opt/data_lake/bronze/velib "
         f"{date} {hour}"
     )
-    print(f"Commande: {cmd}\n")
+    print(f"Command: {cmd}\n")
 
     exit_code, output = container.exec_run(cmd, stream=False)
     if output:
         print(output.decode("utf-8", errors="replace"))
 
     if exit_code != 0:
-        raise Exception(f"Le job Spark a échoué avec le code de retour {exit_code}")
+        raise Exception(f"The Spark job failed with return code {exit_code}")
 
-    print(f"✅ Transformation Spark pour {date} à {hour}h - Succès")
+    print(f"✅ Spark transformation for {date} at {hour}:00 - Success")
     return True
 
 def validate_silver_data(**context) -> bool:
-    """Valide que les données ont été chargées dans Silver via connexion psycopg2 directe"""
+    """Validate that data was loaded into Silver using a direct psycopg2 connection"""
     import psycopg2
     from urllib.parse import urlparse
 
@@ -135,9 +134,9 @@ def validate_silver_data(**context) -> bool:
     date = dt.format("YYYY-MM-DD")
     hour = dt.format("HH")
 
-    print(f"\n📊 Validation des données Silver pour {date} à {hour}h")
+    print(f"\n📊 Validating Silver data for {date} at {hour}:00")
 
-    # Parsing de la conn string Airflow : postgresql+psycopg2://user:pass@host:port/db
+    # Parse the Airflow connection string: postgresql+psycopg2://user:pass@host:port/db
     conn_str = os.environ["AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"]
     parsed = urlparse(conn_str.replace("postgresql+psycopg2://", "postgresql://"))
 
@@ -173,20 +172,19 @@ def validate_silver_data(**context) -> bool:
         conn.close()
 
     if total_rows == 0:
-        print("  ❌ Aucune donnée Silver trouvée pour cette heure")
+        print("  ❌ No Silver data found for this hour")
         return False
 
-    print(f"  ✅ {total_rows} lignes validées pour {unique_stations} stations")
+    print(f"  ✅ {total_rows} rows validated for {unique_stations} stations")
     return True
 
 def show_summary():
-    """Affiche un résumé des données Silver"""
-    import psycopg2
-    from urllib.parse import urlparse
+    """Display a summary of Silver data"""
 
-    print("\n📈 Résumé des données Silver...")
 
-    # Parsing de la conn string Airflow : postgresql+psycopg2://user:pass@host:port/db
+    print("\n📈 Silver data summary...")
+
+    # Parse the Airflow connection string: postgresql+psycopg2://user:pass@host:port/db
     conn_str = os.environ["AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"]
     parsed = urlparse(conn_str.replace("postgresql+psycopg2://", "postgresql://"))
 
@@ -220,18 +218,18 @@ def show_summary():
             )
             last_snapshot = cur.fetchone()
 
-            print(f"  ✅ Nombre total de stations : {total_stations}")
-            print(f"  ✅ Nombre total de snapshots : {total_snapshots}")
+            print(f"  ✅ Total number of stations: {total_stations}")
+            print(f"  ✅ Total number of snapshots: {total_snapshots}")
 
             if last_snapshot:
                 snapshot_hour, rows_added, stations_count = last_snapshot
-                print("  ✅ Dernier snapshot ajouté :")
-                print(f"     - Date : {snapshot_hour.strftime('%Y-%m-%d')}")
-                print(f"     - Heure : {snapshot_hour.strftime('%H:%M:%S')}")
-                print(f"     - Nombre de lignes ajoutées : {rows_added}")
-                print(f"     - Nombre de stations : {stations_count}")
+                print("  ✅ Latest snapshot added:")
+                print(f"     - Date: {snapshot_hour.strftime('%Y-%m-%d')}")
+                print(f"     - Time: {snapshot_hour.strftime('%H:%M:%S')}")
+                print(f"     - Rows added: {rows_added}")
+                print(f"     - Stations: {stations_count}")
             else:
-                print("  ⚠️ Aucun snapshot disponible dans silver.station_availability")
+                print("  ⚠️ No snapshot available in silver.station_availability")
     finally:
         conn.close()
 
@@ -246,13 +244,13 @@ with DAG(
     tags=["velib", "bronze", "silver", "spark", "hourly"],
 ) as dag:
 
-    # Task 1: Load last hour's data from Bronze
+    # Task 1: Check Bronze data for the previous hour
     load_task = PythonOperator(
         task_id='load_data',
         python_callable=check_bronze_data,
     )
 
-    # Task 2: Run Spark job to transform data from Bronze to Silver
+    # Task 2: Run the Spark job to transform data from Bronze to Silver
     run_spark_job = PythonOperator(
         task_id='run_spark_job',
         python_callable=run_spark_job,
@@ -264,7 +262,7 @@ with DAG(
         python_callable=validate_silver_data,
     )
 
-    # Task 4: Show summary of Silver data
+    # Task 4: Show a summary of Silver data
     summary_task = PythonOperator(
         task_id='show_summary',
         python_callable=show_summary,

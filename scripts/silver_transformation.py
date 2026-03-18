@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Script de test manuel pour la transformation Bronze → Silver
-Permet de tester le pipeline sans passer par Airflow
+Manual test script for the Bronze -> Silver transformation
+Allows testing the pipeline without going through Airflow
 """
 
 import sys
@@ -13,10 +13,10 @@ import argparse
 
 def run_command(command: str, description: str) -> bool:
     """
-    Exécute une commande shell et affiche le résultat
+    Run a shell command and print the result
 
     Returns:
-        True si succès, False sinon
+        True on success, otherwise False
     """
     print(f"\n{'='*70}")
     print(f"🔧 {description}")
@@ -49,8 +49,8 @@ def run_command(command: str, description: str) -> bool:
 
 
 def check_prerequisites():
-    """Vérifie que tous les prérequis sont OK"""
-    print("\n📋 Vérification des prérequis...")
+    """Check that all prerequisites are available"""
+    print("\n📋 Checking prerequisites...")
 
     checks = {
         "Docker": "docker --version",
@@ -66,18 +66,18 @@ def check_prerequisites():
         if result.returncode == 0:
             print(f"  ✅ {name}")
         else:
-            print(f"  ❌ {name} - Non disponible")
+            print(f"  ❌ {name} - Not available")
             all_ok = False
 
     return all_ok
 
 
 def check_bronze_data(date: str, hour: str | None = None) -> bool:
-    """Vérifie que les données Bronze existent pour l'heure ou la journée"""
+    """Check whether Bronze data exists for the hour or the full day"""
     if hour is not None:
-        print(f"\n🔍 Vérification des données Bronze pour {date} à {hour}h...")
+        print(f"\n🔍 Checking Bronze data for {date} at {hour}:00...")
     else:
-        print(f"\n🔍 Vérification des données Bronze pour {date} (toute la journée)...")
+        print(f"\n🔍 Checking Bronze data for {date} (full day)...")
 
     date_part = date
 
@@ -106,7 +106,7 @@ def check_bronze_data(date: str, hour: str | None = None) -> bool:
 
     if "FOUND" in result.stdout:
         if hour is not None:
-            # Compter les fichiers pour cette heure spécifique
+            # Count files for this specific hour
             count_cmd = f"""
             docker exec velib_airflow_scheduler bash -c "
                 find /opt/airflow/data_lake/bronze/velib/ingestion_date={date_part}/hour={hour} -name '*.parquet' | wc -l
@@ -114,9 +114,9 @@ def check_bronze_data(date: str, hour: str | None = None) -> bool:
             """
             count_result = subprocess.run(count_cmd, shell=True, capture_output=True, text=True)
             file_count = int(count_result.stdout.strip())
-            print(f"  ✅ {file_count} fichiers Parquet trouvés pour {hour}h")
+            print(f"  ✅ {file_count} Parquet files found for {hour}:00")
         else:
-            # Compter les fichiers pour toute la date
+            # Count files for the full date
             count_cmd = f"""
             docker exec velib_airflow_scheduler bash -c "
                 find /opt/airflow/data_lake/bronze/velib/ingestion_date={date_part} -name '*.parquet' | wc -l
@@ -124,21 +124,21 @@ def check_bronze_data(date: str, hour: str | None = None) -> bool:
             """
             count_result = subprocess.run(count_cmd, shell=True, capture_output=True, text=True)
             file_count = int(count_result.stdout.strip())
-            print(f"  ✅ {file_count} fichiers Parquet trouvés pour la date {date_part}")
+            print(f"  ✅ {file_count} Parquet files found for date {date_part}")
         return file_count > 0
     else:
         if hour is not None:
-            print(f"  ❌ Aucune donnée Bronze pour {date_part} à {hour}h")
-            print(f"     Chemin vérifié: /opt/airflow/data_lake/bronze/velib/ingestion_date={date_part}/hour={hour}")
+            print(f"  ❌ No Bronze data for {date_part} at {hour}:00")
+            print(f"     Checked path: /opt/airflow/data_lake/bronze/velib/ingestion_date={date_part}/hour={hour}")
         else:
-            print(f"  ❌ Aucune donnée Bronze pour {date_part}")
-            print(f"     Chemin vérifié: /opt/airflow/data_lake/bronze/velib/ingestion_date={date_part}")
+            print(f"  ❌ No Bronze data for {date_part}")
+            print(f"     Checked path: /opt/airflow/data_lake/bronze/velib/ingestion_date={date_part}")
         return False
 
 
 def run_spark_job(date: str, hour: str | None = None) -> bool:
-    """Lance le job Spark de transformation"""
-    # Télécharger le driver PostgreSQL si nécessaire
+    """Run the Spark transformation job"""
+    # Download the PostgreSQL driver if needed
     download_cmd = """
     docker exec velib_spark bash -c "
         if [ ! -f /opt/spark/jars/postgresql-42.7.1.jar ]; then
@@ -161,9 +161,9 @@ def run_spark_job(date: str, hour: str | None = None) -> bool:
             {date} \
             {hour}
         """
-        return run_command(command, f"Transformation Spark pour {date} à {hour}h")
+        return run_command(command, f"Spark transformation for {date} at {hour}:00")
 
-    # Si aucune hour n'est fournie, traiter toutes les heures de la journée depuis le pipeline BronzeToSilver
+    # If no hour is provided, process all hours of the day through the BronzeToSilver pipeline
     command = f"""
     docker exec velib_spark /opt/spark/bin/spark-submit \
         --jars /opt/spark/jars/postgresql-42.7.1.jar \
@@ -175,13 +175,13 @@ def run_spark_job(date: str, hour: str | None = None) -> bool:
         /opt/data_lake/bronze/velib \
         {date}
     """
-    return run_command(command, f"Transformation Spark pour toute la date {date}")
+    return run_command(command, f"Spark transformation for full date {date}")
 
 
 def validate_silver_data(date: str, hour: str | None = None):
-    """Valide que les données ont été chargées dans Silver"""
+    """Validate that data has been loaded into Silver"""
     if hour is not None:
-        print(f"\n📊 Validation des données Silver pour {date} à {hour}h")
+        print(f"\n📊 Validating Silver data for {date} at {hour}:00")
         hour_timestamp = f"{date} {hour.zfill(2)}:00:00"
         query = f"""
         SELECT
@@ -194,7 +194,7 @@ def validate_silver_data(date: str, hour: str | None = None):
         AND snapshot_timestamp < ('{hour_timestamp}'::timestamp + interval '1 hour');
         """
     else:
-        print(f"\n📊 Validation des données Silver pour la date {date} (toute la journée)")
+        print(f"\n📊 Validating Silver data for date {date} (full day)")
         day_start = f"{date} 00:00:00"
         query = f"""
         SELECT
@@ -214,25 +214,25 @@ def validate_silver_data(date: str, hour: str | None = None):
     print(result.stdout)
 
     if "0 rows" in result.stdout or "ERROR" in result.stderr:
-        print("  ❌ Aucune donnée trouvée ou erreur")
+        print("  ❌ No data found or query error")
         return False
     else:
-        print("  ✅ Données validées")
+        print("  ✅ Data validated")
         return True
 
 
 def show_summary():
-    """Affiche un résumé des données Silver"""
-    print("\n📈 Résumé des données Silver...")
+    """Print a summary of Silver data"""
+    print("\n📈 Silver data summary...")
 
     queries = [
-        ("Nombre total de stations",
+        ("Total number of stations",
          "SELECT COUNT(*) as total FROM silver.stations;"),
 
-        ("Nombre total de snapshots",
+        ("Total number of snapshots",
          "SELECT COUNT(*) as total FROM silver.station_availability;"),
 
-        ("Derniers snapshots par heure",
+        ("Latest hourly snapshots",
          """SELECT
                 date_trunc('hour', snapshot_timestamp) as hour,
                 COUNT(*) as snapshots,
@@ -252,93 +252,93 @@ def show_summary():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Test manuel de la transformation Bronze → Silver"
+        description="Manual test for the Bronze -> Silver transformation"
     )
     parser.add_argument(
         '--date',
         type=str,
         default=(datetime.now()).strftime('%Y-%m-%d'),
-        help='Jour à traiter (format YYYY-MM-DD, défaut: jour actuel)'
+        help='Day to process (format YYYY-MM-DD, default: current day)'
     )
     parser.add_argument(
         '--hour',
         type=str,
         default=None,
-        help='Heure à traiter (format HH, optionnel : si non fournie, traite toute la journée)'
+        help='Hour to process (format HH, optional: if omitted, processes the full day)'
     )
     parser.add_argument(
         '--skip-validation',
         action='store_true',
-        help='Ignorer la validation des prérequis'
+        help='Skip prerequisite validation'
     )
     parser.add_argument(
         '--summary-only',
         action='store_true',
-        help='Afficher seulement le résumé (sans lancer le job)'
+        help='Display only the summary (without running the job)'
     )
 
     args = parser.parse_args()
 
     print("""
     ╔════════════════════════════════════════════════════════════════════╗
-    ║   TEST MANUEL - TRANSFORMATION BRONZE → SILVER                     ║
-    ║   Vélib Data Engineering Project                                   ║
+    ║   MANUAL TEST - BRONZE -> SILVER TRANSFORMATION                    ║
+    ║   Velib Data Engineering Project                                   ║
     ╚════════════════════════════════════════════════════════════════════╝
     """)
 
-    print(f"📅 Jour cible: {args.date}")
+    print(f"📅 Target day: {args.date}")
     if args.hour:
-        print(f"📅 Heure cible: {args.hour}h")
+        print(f"📅 Target hour: {args.hour}:00")
 
-    # Mode summary-only
+    # Summary-only mode
     if args.summary_only:
         show_summary()
         return
 
-    # Vérifier les prérequis
+    # Check prerequisites
     if not args.skip_validation:
         if not check_prerequisites():
-            print("\n❌ Prérequis manquants. Lancez d'abord 'docker-compose up -d'")
+            print("\n❌ Missing prerequisites. Start them first with 'docker-compose up -d'")
             sys.exit(1)
 
-    # Vérifier les données Bronze
+    # Check Bronze data
     if not check_bronze_data(args.date, args.hour):
         if args.hour:
-            print(f"\n❌ Données Bronze manquantes pour {args.date} à {args.hour}h")
+            print(f"\n❌ Missing Bronze data for {args.date} at {args.hour}:00")
         else:
-            print(f"\n❌ Données Bronze manquantes pour la date {args.date}")
-        print("   Lancez d'abord le DAG d'ingestion Bronze")
+            print(f"\n❌ Missing Bronze data for date {args.date}")
+        print("   Start the Bronze ingestion DAG first")
         sys.exit(1)
 
-    # Lancer le job Spark
+    # Run the Spark job
     if not run_spark_job(args.date, args.hour):
         if args.hour:
-            print("\n❌ Job Spark échoué pour l'heure")
+            print("\n❌ Spark job failed for the requested hour")
         else:
-            print("\n❌ Job Spark échoué pour la date complète")
+            print("\n❌ Spark job failed for the full date")
         sys.exit(1)
 
-    # Valider les résultats
+    # Validate results
     if not validate_silver_data(args.date, args.hour):
         if args.hour:
-            print("\n❌ Validation échouée pour l'heure")
+            print("\n❌ Validation failed for the requested hour")
         else:
-            print("\n❌ Validation échouée pour la date complète")
+            print("\n❌ Validation failed for the full date")
         sys.exit(1)
 
-    # Afficher le résumé
+    # Display summary
     show_summary()
 
     print("""
     ╔════════════════════════════════════════════════════════════════════╗
-    ║   ✅ TEST TERMINÉ AVEC SUCCÈS                                      ║
+    ║   ✅ TEST COMPLETED SUCCESSFULLY                                   ║
     ╚════════════════════════════════════════════════════════════════════╝
     """)
 
-    print("\n📚 Prochaines étapes:")
-    print("  1. Vérifier les données dans PostgreSQL")
-    print("  2. Activer le DAG Airflow pour automatisation quotidienne")
-    print("  3. Configurer le monitoring et les alertes")
+    print("\n📚 Next steps:")
+    print("  1. Check the data in PostgreSQL")
+    print("  2. Enable the Airflow DAG for daily automation")
+    print("  3. Configure monitoring and alerts")
     print()
 
 

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pandas as pd
 from typing import Dict, List, Tuple
 import logging
+import pytz
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class VelibDataQuality:
     def check_duplicates(self, key_columns: List[str]) -> Tuple[bool, str]:
         """Check duplicates on key columns"""
         if not all(col in self.df.columns for col in key_columns):
-            msg = "/!\   Impossible to check duplicates (missing columns)"
+            msg = "/!\   Unable to check duplicates (missing columns)"
             self.results.append(('duplicates', False, msg))
             return False, msg
 
@@ -121,7 +122,7 @@ class VelibDataQuality:
                 issues.append(f"{col}: {out_of_range} values out of range [{min_val}, {max_val}]")
 
         if issues:
-            msg = f"/!\   Aberrant values: {'; '.join(issues)}"
+            msg = f"/!\   Out-of-range values: {'; '.join(issues)}"
             self.results.append(('ranges', False, msg))
             return False, msg
 
@@ -148,7 +149,7 @@ class VelibDataQuality:
             self.results.append(('consistency', True, msg))
             return True, msg
 
-        msg = "/!\  Impossible to check consistency (missing columns)"
+        msg = "/!\  Unable to check consistency (missing columns)"
         self.results.append(('consistency', False, msg))
         return False, msg
 
@@ -161,12 +162,12 @@ class VelibDataQuality:
             'stationcode','name','is_installed','capacity',
             'numdocksavailable','numbikesavailable','mechanical',
             'ebike','is_renting','is_returning','duedate',
-            'coordonnees_geo','nom_arrondissement_communes',
-            'code_insee_commune','station_opening_hours',
+            'nom_arrondissement_communes','code_insee_commune',
+            'lon','lat','station_opening_hours',
             'ingestion_timestamp','snapshot_id'
         ]
 
-        critical_columns = ['stationcode', 'name', 'coordonnees_geo','capacity', 'numdocksavailable', 'numbikesavailable']
+        critical_columns = ['stationcode', 'name', 'lon', 'lat','capacity', 'numdocksavailable', 'numbikesavailable']
 
         numeric_ranges = {
             'capacity': (0, 110),
@@ -187,7 +188,7 @@ class VelibDataQuality:
         failed = len(self.results) - passed
 
         report = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(pytz.timezone('Europe/Paris')).isoformat(),
             'total_rows': len(self.df),
             'tests_passed': passed,
             'tests_failed': failed,

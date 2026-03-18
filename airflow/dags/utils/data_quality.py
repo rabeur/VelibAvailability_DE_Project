@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 import pandas as pd
 from typing import Dict, List, Tuple
 import logging
-
 import pytz
 
 logger = logging.getLogger(__name__)

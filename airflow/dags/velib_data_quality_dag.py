@@ -4,7 +4,6 @@ from airflow.operators.bash import BashOperator
 from datetime import datetime, timedelta
 import pandas as pd
 import glob
-import json
 import os
 import sys
 
@@ -73,14 +72,37 @@ def run_quality_checks(**context):
     # Execute all checks and get the report
     report = dq.run_all_checks()
 
-    # Save report to a JSON file for record-keeping
-    report_dir = "/opt/airflow/data_lake/reports/data_quality"
+    report_dt = context['data_interval_end'].in_timezone('Europe/Paris').subtract(minutes=1)
+    report_date = report_dt.format('YYYY-MM-DD')
+    report_hour = report_dt.format('HH')
+    report_minute = report_dt.format('mm')
+
+    # Save report to a text file using a date/hour partitioned layout
+    report_dir = (
+        f"/opt/airflow/data_lake/reports/data_quality/"
+        f"report_date={report_date}/hour={report_hour}"
+    )
     os.makedirs(report_dir, exist_ok=True)
 
-    report_file = f"{report_dir}/dq_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    report_file = f"{report_dir}/report-{report_date}-{report_hour}-{report_minute}.txt"
 
-    with open(report_file, 'w') as f:
-        json.dump(report, f, indent=2)
+    report_lines = [
+        "VELIB DATA QUALITY REPORT",
+        f"Timestamp: {report['timestamp']}",
+        f"Rows checked: {report['total_rows']}",
+        f"Tests passed: {report['tests_passed']}",
+        f"Tests failed: {report['tests_failed']}",
+        f"Success rate: {report['success_rate']:.1f}%",
+        "",
+        "Details:",
+    ]
+
+    for detail in report['details']:
+        status = 'PASS' if detail['passed'] else 'FAIL'
+        report_lines.append(f"- [{status}] {detail['test']}: {detail['message']}")
+
+    with open(report_file, 'w', encoding='utf-8') as f:
+        f.write("\n".join(report_lines) + "\n")
 
     print(f"\n📄 Report saved to: {report_file}")
 

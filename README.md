@@ -1,168 +1,186 @@
 # 🚴 Vélib' Data Pipeline - Paris Bicycle Sharing Analytics
 
-This project was created to be submited to the online free couse  [Data Engineering Zoomcamp 2026][zoomcamp_website_link] run by **DataTalks Club**.
+This project was built as part of the [Data Engineering Zoomcamp 2026][zoomcamp_website_link] by **DataTalks Club**.
 
-## 📊 Problem definition
+## 📊 Problem Definition
 
-This project aims to **build a data platform** based on **Vélib' open source database** in order to transform raws data stream into exploitable business indicators.
+The objective is to build a local, production-like data platform around **Vélib' open data** and transform raw station snapshots into analytics-ready datasets.
 
-The goal is to provide spatio-temporal analysis of the bicycle availability, to identify areas under pressure and to provide a database for availability prediction models.
+The pipeline supports spatio-temporal analysis of bike availability to identify areas under pressure and prepare data for forecasting models.
 
-The project covers the entire data value chain: **data acquisiton, pre-processing, storage, analysis, visualization**.
+## 🎯 Main Objectives
 
+- [x] Ingest real-time Vélib data every minute
+- [x] Store raw snapshots in a Bronze data lake (Parquet, partitioned)
+- [x] Transform Bronze data into a Silver warehouse model (Spark + PostgreSQL)
+- [x] Run automated data quality checks and persist reports
+- [ ] Add dbt transformation layer for Gold business models
+- [ ] Build BI dashboards and operational reporting
 
-## 🎯 Main Objective
+## ✅ Current Progress
 
-- [x] Ingest real-time Vélib data every minutes
-- [x] Store raw data in a data lake like solution
-- [ ] Process raw data en store valuable data in a data warehouse
-- [ ] Transform valuable data to hilight business case
-- [ ] Use data vizualisation to show what have been done
+### Phase 1: Infrastructure ✅ Completed
+- [x] Docker Compose stack: PostgreSQL, Spark, Jupyter, Airflow
+- [x] Local-first environment with reproducible setup via Makefile
+- [x] SQL initialization for Silver schema
 
-## ✅ Progression
+### Phase 2: Ingestion ✅ Completed
+- [x] Airflow ingestion DAG running every minute
+- [x] Stable Bronze schema with typed columns
+- [x] Geo flattening (`coordonnees_geo` → `lat`/`lon`)
+- [x] Partitioned writes: `data_lake/bronze/velib/ingestion_date=YYYY-MM-DD/hour=HH/`
 
-### Phase 1 : Infrastructure ✅ COMPLETED
-- [x] Docker Compose with PostgreSQL, Spark, Jupyter, Airflow
-- [x] Exploration Velib' API
-- [x] Fonctionnal Parquet ingestion script
-- [x] Data exploration notebook
+### Phase 3: Data Quality ✅ Implemented
+- [x] Dedicated Airflow data-quality DAG (runs every minute)
+- [x] Quality checks: schema, nulls, duplicates, freshness, ranges, consistency
+- [x] Partitioned text reports in `data_lake/reports/data_quality/report_date=YYYY-MM-DD/hour=HH/`
 
-### Phase 2 : Ingestion pipeline ✅ COMPLETED
-- [x] Automatisation of data ingestion with DAG Airflow
-- [x] Monitoring and alerts
-- [x] Tests data quality
+### Phase 4: Bronze → Silver ✅ Implemented (core)
+- [x] Hourly Airflow DAG for Bronze-to-Silver transformations
+- [x] Spark transformation job with data cleaning, normalization, and metrics
+- [x] PostgreSQL Silver loading and validation
+- [x] Runtime summary task with station/snapshot monitoring
 
-### Phase 3 : Transformations (IN PROGRESS)
-- [x] Silver schema (cleanse)
-- [x] Creation and feeding of the postgreDB
-- [ ] Dbt transformations
-- [ ] Gold schema  (aggregate)
+### Phase 5: Analytics & Visualization ⏳ In progress
+- [ ] dbt models (Gold layer)
+- [ ] Dashboarding (Power BI / Streamlit / Metabase)
+- [ ] Advanced KPI catalog and alerting strategy
 
-### Phase 4 : Analysis & Visualization (COMING SOON)
-- [ ] Dashboard Metabase/Streamlit
-- [ ] Temporal Analysys
-- [ ] Automated reports
+## 🆕 Recent Evolution Added to the Project
+
+- Airflow now triggers the Spark job from the scheduler container using the Docker SDK.
+- Docker socket permission handling was added via `DOCKER_GID` and `group_add` in Airflow services.
+- Silver validation and summary tasks use direct PostgreSQL connections (no `docker exec` dependency).
+- Data-quality reports were moved to partitioned paths aligned with data-lake conventions.
+- Codebase comments/logs were standardized to English in key pipeline files.
 
 ## 🏗️ Architecture
 
 ![Architecture Diagram](docs/diagrams/architecture_diagram.png)
-(This architecture diagram was created using [Lucidchart][lucidchart_website_link].)
+(Architecture diagram created with [Lucidchart][lucidchart_website_link].)
 
 ## 🛠️ Tech Stack
 
-| Component | Technology | Role in the project |
-|-----------|-------------|---------------------|
-| Orchestration  | **Apache Airflow**                   | Airflow orchestrates the entire pipeline: scheduling batch ingestion jobs, managing dependencies between tasks (ingestion → storage → processing → transformation → analytics), and monitoring pipeline health. It enables reproducibility and production-grade workflow management, even in a local environment. |
-| Ingestion      | **Python (requests + pandas)**       | Python is used for batch data ingestion from the Vélib' open data API every 15 minutes. It provides flexibility, simplicity, and strong ecosystem support for API ingestion, data validation, and preprocessing before storage.                                                                                   |
-| Data Lake      | **Local filesystem (Parquet files)** | A local data lake is implemented using partitioned **Parquet files** on the filesystem. This simulates cloud data lake architectures (S3/GCS/ADLS) while remaining fully local. Parquet ensures efficient storage, compression, schema evolution, and analytical performance.                                     |
-| Processing     | **Apache Spark**                     | Spark is used for batch processing and enrichment of raw data. It enables scalable transformations, partitioning strategies, and future-proofing for large-scale data volumes. Spark also introduces distributed processing concepts used in real production data platforms.                                      |
-| Data Warehouse | **PostgreSQL**                       | PostgreSQL acts as the analytical data warehouse. It stores cleaned, structured, and business-ready datasets. PostgreSQL is reliable, SQL-native, production-proven, and integrates naturally with dbt and BI tools.                                                                                              |
-| Transformation | **dbt**                              | dbt structures the transformation layer using SQL models, tests, and documentation. It enforces analytics engineering best practices: versioned transformations, lineage, modularity, testing, and reproducibility.                                                                                               |
-| Infrastructure | **Docker + Docker Compose**          | Docker provides fully reproducible local infrastructure. All services (Airflow, Spark, PostgreSQL) run in isolated containers, simulating production deployment patterns and ensuring environment consistency.                                                                                                    |
-| Visualization  | **Power BI**                         | Power BI is used for dashboarding and business visualization. It provides rich interactive analytics, strong PostgreSQL integration, and enterprise-grade BI features for spatio-temporal analysis and operational insights.                                                                                      |
+| Component | Technology | Role |
+|-----------|------------|------|
+| Orchestration | **Apache Airflow 2.9** | Scheduling, dependency management, and pipeline monitoring |
+| Ingestion | **Python (requests + pandas)** | Real-time API extraction, schema stabilization, Bronze writes |
+| Processing | **Apache Spark 3.5** | Bronze-to-Silver transformations and enrichment |
+| Data Warehouse | **PostgreSQL 17** | Silver analytical storage |
+| Data Lake | **Local filesystem + Parquet** | Raw snapshot storage with partitioning |
+| Interactive Analysis | **Jupyter PySpark Notebook** | Exploration and profiling |
+| Infrastructure | **Docker + Docker Compose** | Reproducible local deployment |
+| Transformation (planned) | **dbt** | Gold models, tests, and lineage |
+| Visualization (planned) | **Power BI / Streamlit / Metabase** | Dashboards and business insights |
 
+## 📁 Pipeline Components
 
-## 📁 Data Model
+### Airflow DAGs
+- `velib_ingestion_pipeline` (every minute)
+  - API extraction, schema enforcement, Bronze write, basic validation
+- `velib_data_quality` (every minute)
+  - Snapshot quality checks and partitioned report generation
+- `velib_silver_transformation_hourly` (hourly)
+  - Bronze availability check, Spark job execution, Silver validation, summary
 
-### Bronze Layer
-Raw Velib' API data (Parquet, Data Lake)
-- `velib_raw_snapshots` :
-  - stationcode
-  - name
-  - is_installed
-  - capacity
-  - numdocksavailable
-  - numbikesavailable
-  - mechanical
-  - ebike
-  - is_renting
-  - is_returning
-  - duedate
-  - lon
-  - lat
-  - nom_arrondissement_communes
-  - code_insee_communes
-  - station_opening_hours
-  - ingestion_timestamp
-  - snapshot_id
+### Spark Job
+- `spark_jobs/bronze_to_silver.py`
+  - Cleans and normalizes fields
+  - Computes operational metrics (`occupancy_rate`, `availability_rate`, `service_rate`)
+  - Loads stations and availability into Silver tables
 
-### Silver Layer
-Cleaned & enriched datasets (Spark)
+## 📦 Data Model
 
+### Bronze Layer (Parquet)
+Partitioned snapshots:
+- `ingestion_date`
+- `hour`
 
-### Gold Layer
-Business models (dbt + PostgreSQL)
-- [YOUR ANALYTICS TABLES]
+Main fields include:
+- `stationcode`, `name`, `capacity`
+- `numdocksavailable`, `numbikesavailable`, `mechanical`, `ebike`
+- `is_installed`, `is_renting`, `is_returning`
+- `lat`, `lon`
+- `nom_arrondissement_communes`, `code_insee_commune`
+- `ingestion_timestamp`, `snapshot_id`
+
+### Silver Layer (PostgreSQL)
+- `silver.stations` (station dimension)
+- `silver.station_availability` (hourly/time-based facts)
+
+### Gold Layer (planned)
+Business-oriented models and KPIs via dbt.
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Install [Docker desktop][docker_desktop] or Docker Engine
-- Use WSL or linux terminal
+- Docker Desktop or Docker Engine
+- Linux/WSL terminal
+- `make`
 
 ### Installation
-```bash
-# 0. Install python
-sudo apt-get update
-sudo apt-get install python3.6
-sudo apt install -y make
 
-# 1. Clone the repository and give permission
+```bash
+# 1) Clone project
 git clone https://github.com/rabeur/VelibAvailability_DE_Project.git
 cd VelibAvailability_DE_Project
-sudo chown -R 50000:0 airflow
-sudo chmod -R 775 airflow
-sudo chown -R 50000:0 data_lake
 
-# 2. Launch project throught Makefile
+# 2) Bootstrap env + build + up
 make first-launch
-#init bdd
-docker exec -it velib_postgres psql -U velib -d velib_dw -f /docker-entrypoint-initdb.d/02_init_silver_schema.sql
+
+# 3) (Optional) check service status
+make status
 ```
 
-## 📈 Metrics & KPIs
+### Service Endpoints
+- Airflow: `http://localhost:8081`
+- Spark Master UI: `http://localhost:8080`
+- Jupyter: `http://localhost:8888`
+- PostgreSQL: `localhost:5432`
+- pgAdmin: `http://localhost:5050`
+
+## 🧪 Data Quality Reports
+
+Reports are generated as text files in:
+
+`data_lake/reports/data_quality/report_date=YYYY-MM-DD/hour=HH/report-YYYY-MM-DD-HH-mm.txt`
+
+Each report contains:
+- rows checked
+- tests passed / failed
+- success rate
+- detailed PASS/FAIL messages per check
+
+## 🔍 Example Analyses Enabled
+
+- Bike availability trend by hour/day
+- Station occupancy stress zones
+- Empty/full station rate by time bucket
+- Data freshness and ingestion reliability monitoring
+
+## 📚 Key Challenges Solved
+
+- Building historical snapshots from real-time API data
+- Stabilizing schema across rapidly ingested Parquet files
+- Enforcing data quality gates before downstream analytics
+- Running Spark jobs from Airflow in Dockerized local environment
 
 
-## 🔍 Possible Analyses
+## 🔮 Next Steps
 
-- [EXAMPLES OF ANALYSES ENABLED BY YOUR PIPELINE]
+- [ ] Add dbt project structure and Gold marts
+- [ ] Add semantic metrics and KPI definitions
+- [ ] Add dashboard layer and stakeholder views
+- [ ] Improve alerting channels (email/Slack)
+- [ ] Prepare cloud migration path (GCP/AWS)
 
-## 📚 Learnings & Challenges
+## 🌍 Local-first, Cloud-ready
 
-
-### Challenges faced
-- The open data is only a timestamp of the velib' station occupation so i had to create myself an historic to permit analyse
-- I cannot acquired all the data in one API call with json output after exmine the API console i found a api call to extract directly data in parquet file
-- parquet files dont decode gpx data
-- When adding data_quality script i discovered that a lot of data is inconsistent
-
-### Solutions founds
-- [SOLUTION 1]
-
-## 🔮 Futures Evolution
-
-- [ ] Migration throught GCP/AWS
-- [ ] Add streaming with Kafka
-- [ ] Enable email alerts
-
-### Local-first, cloud-ready:
-
-- Local filesystem = S3/GCS equivalent
-
-- PostgreSQL = BigQuery/Snowflake equivalent
-
-- Spark = scalable processing layer
-
-- Airflow = production-grade orchestration
-
-TODO:
-- During ingestion, the Parquet schema must be enforced and geographic coordinates must be properly extracted.
-- The ingestion data-quality script must remove Parquet files that do not match the expected schema.
--> Consequence: the Silver step and PostgreSQL ingestion will be much simpler because all Parquet files will share the same metadata.
-
+- Local filesystem ↔ object storage (S3/GCS/ADLS)
+- PostgreSQL ↔ analytical warehouse (BigQuery/Snowflake)
+- Spark local ↔ scalable distributed processing
+- Airflow local ↔ managed orchestration services
 
 [zoomcamp_website_link]: https://github.com/DataTalksClub/data-engineering-zoomcamp
-
 [lucidchart_website_link]: https://www.lucidchart.com/pages
-
-[docker_desktop]: https://www.docker.com/products/docker-desktop?
+[docker_desktop]: https://www.docker.com/products/docker-desktop

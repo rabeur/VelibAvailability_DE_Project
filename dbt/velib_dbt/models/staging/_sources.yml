@@ -1,0 +1,59 @@
+version: 2
+
+sources:
+  - name: silver
+    description: "Silver layer — cleaned and enriched Vélib data produced by the Spark pipeline"
+    database: velib_dw
+    schema: silver
+    tables:
+
+      - name: stations
+        description: "Station dimension — one row per unique station"
+        columns:
+          - name: station_id
+            description: "Station unique identifier (stationcode)"
+            tests:
+              - not_null
+              - unique
+          - name: station_name
+            description: "Human-readable station name"
+            tests:
+              - not_null
+          - name: capacity
+            description: "Total number of docks (physical capacity)"
+            tests:
+              - not_null
+          - name: latitude
+            description: "WGS-84 latitude"
+          - name: longitude
+            description: "WGS-84 longitude"
+          - name: district_municipality_names
+            description: "Name of the district or municipality where the station is located"
+          - name: is_active
+            description: "Whether the station has been seen recently"
+            tests:
+              - not_null
+
+      - name: station_availability
+        description: "Availability facts — one row per station per ~1-minute snapshot"
+        columns:
+          - name: station_id
+            description: "Foreign key to silver.stations"
+            tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('silver', 'stations')
+                    field: station_id
+          - name: snapshot_timestamp
+            description: "UTC timestamp of the measurement"
+            tests:
+              - not_null
+          - name: num_bikes_available
+            description: "Total bikes available at snapshot time"
+            tests:
+              - not_null
+          - name: occupancy_rate
+            description: "bikes_available / capacity * 100"
+          - name: is_operational
+            description: "is_installed AND is_renting AND is_returning"

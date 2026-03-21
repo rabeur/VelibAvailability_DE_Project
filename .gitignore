@@ -18,3 +18,9 @@ __pycache__/
 
 # airflow
 airflow/logs/**/
+
+#dbt
+dbt/velib_dbt/target/
+dbt/velib_dbt/dbt_packages/
+dbt/velib_dbt/logs/
+dbt/velib_dbt/dbt_internal_packages/

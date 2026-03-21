@@ -100,6 +100,47 @@ give-perms:
 	sudo chown -R ${USER}:${USER} airflow
 	sudo chown -R ${USER}:${USER} data_lake
 
+# ─── dbt / Gold layer ────────────────────────────────────────────────────────
+
+# Install dbt package dependencies (dbt-utils etc.)
+dbt-deps:
+	docker exec velib_dbt dbt deps --profiles-dir /usr/app/dbt
+
+# Run all dbt models (staging + gold)
+dbt-run:
+	docker exec velib_dbt dbt run --profiles-dir /usr/app/dbt
+
+# Run only staging views
+dbt-run-staging:
+	docker exec velib_dbt dbt run --profiles-dir /usr/app/dbt --select staging
+
+# Run only Gold models
+dbt-run-gold:
+	docker exec velib_dbt dbt run --profiles-dir /usr/app/dbt --select gold
+
+# Run dbt data-quality tests
+dbt-test:
+	docker exec velib_dbt dbt test --profiles-dir /usr/app/dbt
+
+# Full dbt pipeline: deps → run → test
+dbt-all: dbt-deps dbt-run dbt-test
+
+# Generate and serve dbt docs locally on port 8082
+dbt-docs:
+	docker exec velib_dbt dbt docs generate --profiles-dir /usr/app/dbt
+	docker exec -d -p 8082:8080 velib_dbt dbt docs serve --profiles-dir /usr/app/dbt --port 8080
+	@echo "dbt docs available at http://localhost:8082"
+
+# Create the silver schema manually (needed if the DB already existed before adding this schema)
+silver-schema:
+	docker exec -i velib_postgres psql -U velib -d velib_dw < sql/02_init_silver_schema.sql
+
+# Create the gold schema manually (needed if the DB already existed before adding this schema)
+gold-schema:
+	docker exec -i velib_postgres psql -U velib -d velib_dw < sql/03_init_gold_schema.sql
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 # help
 help:
 	@echo "Available targets:"
@@ -115,4 +156,13 @@ help:
 	@echo "  shell       : Access a container (make shell SERVICE=<name>)"
 	@echo "  fix-perms   : Give required permission to airflow and datalake folder in order to make docker-compose work (required in prod)"
 	@echo "  give-perms  : Give permission to modify airflow and datalake folder  (usefull in devmode but useless in prod)"
+	@echo "  dbt-deps    : Install dbt package dependencies"
+	@echo "  dbt-run     : Run all dbt models (staging + gold)"
+	@echo "  dbt-run-staging : Run only staging views"
+	@echo "  dbt-run-gold    : Run only Gold models"
+	@echo "  dbt-test    : Run dbt data-quality tests"
+	@echo "  dbt-all     : Full dbt pipeline (deps → run → test)"
+	@echo "  dbt-docs    : Generate and serve dbt docs on port 8082"
+	@echo "  silver-schema : Create silver schema manually (if DB already existed)"
+	@echo "  gold-schema : Create gold schema manually (if DB already existed)"
 	@echo "  help        : This help"

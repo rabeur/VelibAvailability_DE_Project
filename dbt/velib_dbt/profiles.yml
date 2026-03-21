@@ -1,0 +1,23 @@
+velib_dbt:
+  target: prod
+  outputs:
+
+    prod:
+      type: postgres
+      host:     "{{ env_var('POSTGRES_HOST', 'postgres') }}"
+      port:     "{{ env_var('POSTGRES_PORT', '5432') | int }}"
+      user:     "{{ env_var('POSTGRES_USER', 'velib') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'velib') }}"
+      dbname:   "{{ env_var('POSTGRES_DB', 'velib_dw') }}"
+      schema: gold
+      threads: 4
+
+    dev:
+      type: postgres
+      host: localhost
+      port: 5432
+      user: velib
+      password: velib
+      dbname: velib_dw
+      schema: gold_dev
+      threads: 2

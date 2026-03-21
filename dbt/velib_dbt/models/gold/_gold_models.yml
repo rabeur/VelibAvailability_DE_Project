@@ -1,0 +1,101 @@
+version: 2
+
+models:
+
+  - name: dim_stations
+    description: >
+      Gold dimension — enriched Vélib stations.
+      Adds capacity_category and a normalised city label.
+      Full-refresh on every dbt run.
+    columns:
+      - name: station_id
+        description: "Station unique identifier"
+        tests:
+          - not_null
+          - unique
+      - name: station_name
+        tests:
+          - not_null
+      - name: capacity
+        tests:
+          - not_null
+      - name: capacity_category
+        description: "small / medium / large / extra_large based on dock count"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['small', 'medium', 'large', 'extra_large']
+
+  - name: fact_hourly_availability
+    description: >
+      Hourly aggregated availability per station.
+      Granularity: one row per (station_id, snapshot_date, snapshot_hour).
+      Incremental — processes only the last 2 days on each run.
+    columns:
+      - name: station_id
+        tests:
+          - not_null
+      - name: snapshot_date
+        tests:
+          - not_null
+      - name: snapshot_hour
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]
+      - name: avg_occupancy_rate
+        description: "Average occupancy rate during the hour (0–100)"
+      - name: minutes_empty
+        description: "Count of 1-minute snapshots where no bikes were available"
+      - name: minutes_full
+        description: "Count of 1-minute snapshots where no docks were available"
+
+  - name: fact_daily_station_stats
+    description: >
+      Daily aggregated stats per station, rolled up from fact_hourly_availability.
+      Granularity: one row per (station_id, snapshot_date).
+      Incremental — processes only the last 2 days on each run.
+    columns:
+      - name: station_id
+        tests:
+          - not_null
+      - name: snapshot_date
+        tests:
+          - not_null
+      - name: pct_time_empty
+        description: "% of observed minutes during the day where the station was empty"
+      - name: pct_time_full
+        description: "% of observed minutes during the day where the station was full"
+      - name: peak_hour
+        description: "Hour of the day (0–23) with the highest average occupancy"
+
+  - name: mart_station_performance
+    description: >
+      Summary mart — one row per station, KPIs aggregated over all observed history.
+      Useful for dashboards, station ranking, and reliability alerts.
+    columns:
+      - name: station_id
+        tests:
+          - not_null
+          - unique
+      - name: global_occupancy_rank
+        description: "Station rank by average occupancy (1 = busiest)"
+      - name: district_occupancy_rank
+        description: "Station rank within its district by average occupancy"
+
+  - name: mart_peak_hours_by_district
+    description: >
+      Peak hours mart — one row per (district × day_of_week × hour).
+      Answers: when and where are bikes hardest to find?
+      Rebuilt fully on every dbt run.
+    columns:
+      - name: district_municipality_names
+        tests:
+          - not_null
+      - name: snapshot_hour
+        tests:
+          - not_null
+      - name: peak_hour_rank
+        description: "Rank of this hour within the (district, day_of_week) bucket (1 = peak)"

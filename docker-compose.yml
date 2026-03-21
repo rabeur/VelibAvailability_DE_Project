@@ -74,6 +74,25 @@ services:
     networks:
       - velib_network
 
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.9.latest
+    container_name: velib_dbt
+    entrypoint: ["tail", "-f", "/dev/null"]   # keep container alive for exec_run
+    volumes:
+      - ./dbt/velib_dbt:/usr/app/dbt
+    working_dir: /usr/app/dbt
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - velib_network
+
   # ingestion:
   #   build: ./ingestion
   #   container_name: velib_ingestion

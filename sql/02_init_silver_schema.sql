@@ -88,9 +88,9 @@ CREATE TABLE silver.station_availability (
     is_returning BOOLEAN NOT NULL DEFAULT TRUE,
 
     -- Calculated metrics
-    occupancy_rate DECIMAL(5, 2) CHECK (occupancy_rate BETWEEN 0 AND 200),
-    availability_rate DECIMAL(5, 2) CHECK (availability_rate BETWEEN 0 AND 200),
-    service_rate DECIMAL(5, 2) CHECK (service_rate BETWEEN 0 AND 200),
+    occupancy_rate DECIMAL(5, 2) CHECK (occupancy_rate BETWEEN 0 AND 100),
+    availability_rate DECIMAL(5, 2) CHECK (availability_rate BETWEEN 0 AND 100),
+    service_rate DECIMAL(5, 2) CHECK (service_rate BETWEEN 0 AND 100),
     is_empty BOOLEAN NOT NULL DEFAULT FALSE,
     is_full BOOLEAN NOT NULL DEFAULT FALSE,
     is_operational BOOLEAN NOT NULL DEFAULT TRUE,

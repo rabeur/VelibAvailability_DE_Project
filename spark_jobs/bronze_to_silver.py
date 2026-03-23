@@ -13,8 +13,8 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, lit, current_timestamp, when, round as spark_round,
     to_timestamp, coalesce, trim,
-    from_utc_timestamp, hour,
-    expr, upper
+    from_utc_timestamp, hour, least, greatest,
+    expr, upper, min as spark_min, max as spark_max
 )
 from pyspark.sql.types import *
 from datetime import datetime
@@ -176,19 +176,37 @@ class VelibBronzeToSilver:
             .withColumn(
                 "occupancy_rate",
                 when(col("capacity") > 0,
-                     spark_round((col("num_bikes_available") / col("capacity")) * 100, 2))
+                     least(
+                         lit(100.0),
+                         greatest(
+                             lit(0.0),
+                             spark_round((col("num_bikes_available") / col("capacity")) * 100, 2)
+                         )
+                     ))
                 .otherwise(lit(0.0))
             ) \
             .withColumn(
                 "availability_rate",
                 when(col("capacity") > 0,
-                     spark_round((col("num_docks_available") / col("capacity")) * 100, 2))
+                     least(
+                         lit(100.0),
+                         greatest(
+                             lit(0.0),
+                             spark_round((col("num_docks_available") / col("capacity")) * 100, 2)
+                         )
+                     ))
                 .otherwise(lit(0.0))
             ) \
             .withColumn(
                 "service_rate",
                 when(col("capacity") > 0,
-                     spark_round(((col("num_docks_available") + col("num_bikes_available")) / col("capacity")) * 100, 2))
+                     least(
+                         lit(100.0),
+                         greatest(
+                             lit(0.0),
+                             spark_round(((col("num_docks_available") + col("num_bikes_available")) / col("capacity")) * 100, 2)
+                         )
+                     ))
                 .otherwise(lit(0.0))
             ) \
             .withColumn("is_empty", col("num_bikes_available") == 0) \
@@ -334,6 +352,87 @@ class VelibBronzeToSilver:
             logger.error(f"❌ Write error for {table_name}: {e}")
             raise
 
+    def write_availability_with_dedup(self, df_availability):
+        """
+        Write availability facts while ignoring rows that already exist in
+        silver.station_availability (same station_id + snapshot_timestamp).
+
+        This prevents the full batch from failing when a subset of rows
+        has already been ingested.
+        """
+        logger.info("🛡️  Duplicate-safe write for silver.station_availability...")
+
+        # 1) Remove duplicates inside the incoming Spark batch itself
+        incoming_count = df_availability.count()
+        df_dedup_incoming = df_availability.dropDuplicates(["station_id", "snapshot_timestamp"])
+        dedup_incoming_count = df_dedup_incoming.count()
+        dropped_incoming = incoming_count - dedup_incoming_count
+
+        if dropped_incoming > 0:
+            logger.warning(f"  ⚠️  {dropped_incoming:,} duplicate rows removed from incoming batch")
+
+        if dedup_incoming_count == 0:
+            logger.info("  ✅ No availability rows to insert after in-batch dedup")
+            return
+
+        # 2) Restrict existing-key lookup to the current batch time range
+        ts_bounds = df_dedup_incoming.agg(
+            spark_min("snapshot_timestamp").alias("min_ts"),
+            spark_max("snapshot_timestamp").alias("max_ts")
+        ).collect()[0]
+
+        min_ts = ts_bounds["min_ts"]
+        max_ts = ts_bounds["max_ts"]
+
+        if min_ts is None or max_ts is None:
+            logger.info("  ✅ No valid timestamps to insert")
+            return
+
+        min_ts_str = min_ts.strftime("%Y-%m-%d %H:%M:%S.%f")
+        max_ts_str = max_ts.strftime("%Y-%m-%d %H:%M:%S.%f")
+
+        jdbc_url = f"jdbc:postgresql://{self.postgres_config['host']}:{self.postgres_config['port']}/{self.postgres_config['database']}"
+        jdbc_properties = {
+            "user": self.postgres_config['user'],
+            "password": self.postgres_config['password'],
+            "driver": "org.postgresql.Driver"
+        }
+
+        existing_keys_query = f"""
+            (
+                SELECT station_id, snapshot_timestamp
+                FROM silver.station_availability
+                WHERE snapshot_timestamp >= TIMESTAMP '{min_ts_str}'
+                  AND snapshot_timestamp <= TIMESTAMP '{max_ts_str}'
+            ) existing_keys
+        """
+
+        df_existing_keys = self.spark.read.jdbc(
+            url=jdbc_url,
+            table=existing_keys_query,
+            properties=jdbc_properties
+        )
+
+        # 3) Keep only rows not already in PostgreSQL
+        df_to_insert = df_dedup_incoming.join(
+            df_existing_keys,
+            on=["station_id", "snapshot_timestamp"],
+            how="left_anti"
+        )
+
+        to_insert_count = df_to_insert.count()
+        skipped_existing = dedup_incoming_count - to_insert_count
+
+        if skipped_existing > 0:
+            logger.warning(f"  ⚠️  {skipped_existing:,} rows skipped (already present in PostgreSQL)")
+
+        if to_insert_count == 0:
+            logger.info("  ✅ Nothing new to insert into silver.station_availability")
+            return
+
+        self.write_to_postgres(df_to_insert, "silver.station_availability", mode="append")
+        logger.info(f"✅ Duplicate-safe write completed: {to_insert_count:,} new rows inserted")
+
     def upsert_stations(self, df_new_stations):
         """
         Upsert stations: update last_seen_at for existing stations,
@@ -413,12 +512,8 @@ class VelibBronzeToSilver:
             # Stations (upsert to avoid duplicates)
             self.upsert_stations(df_stations)
 
-            # Availability (always append, with a uniqueness constraint in the database)
-            self.write_to_postgres(
-                df_availability,
-                "silver.station_availability",
-                mode="append"
-            )
+            # Availability (append while skipping already-existing keys)
+            self.write_availability_with_dedup(df_availability)
 
             duration = (datetime.now() - start_time).total_seconds()
 

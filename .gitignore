@@ -24,3 +24,6 @@ dbt/velib_dbt/target/
 dbt/velib_dbt/dbt_packages/
 dbt/velib_dbt/logs/
 dbt/velib_dbt/dbt_internal_packages/
+
+#venv
+.venv/

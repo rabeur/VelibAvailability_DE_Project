@@ -18,9 +18,10 @@ staged as (
         last_seen_at,
         is_active
     from source
-    where station_id is not null
-      and capacity > 0
-      and is_active = true
+    where
+        station_id is not null
+        and capacity > 0
+        and is_active = true
 
 )
 

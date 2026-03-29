@@ -12,29 +12,29 @@ enriched as (
         capacity,
 
         -- Capacity category for grouping in reports
+        latitude,
+
+        longitude,
+        district_municipality_names,
+        insee_municipality_code,
+        first_seen_at,
+
+        -- Normalised city label (most stations are in Paris or suburbs)
+        last_seen_at,
+
+        is_active,
         case
             when capacity <= 10 then 'small'
             when capacity <= 20 then 'medium'
             when capacity <= 35 then 'large'
             else 'extra_large'
-        end                                             as capacity_category,
-
-        latitude,
-        longitude,
-        district_municipality_names,
-        insee_municipality_code,
-
-        -- Normalised city label (most stations are in Paris or suburbs)
+        end as capacity_category,
         case
             when district_municipality_names ilike '%paris%' then 'Paris'
             else district_municipality_names
-        end                                             as city,
+        end as city,
 
-        first_seen_at,
-        last_seen_at,
-        is_active,
-
-        current_timestamp                               as dbt_updated_at
+        current_timestamp as dbt_updated_at
 
     from stations
 

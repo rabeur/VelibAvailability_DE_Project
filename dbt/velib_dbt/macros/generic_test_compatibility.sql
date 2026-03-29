@@ -7,7 +7,7 @@
     {% if arguments is not none %}
         {% set values = arguments.get('values', values) %}
         {% set quote = arguments.get('quote', quote) %}
-    {% endif %}
+{% endif %}
 
     with all_values as (
         select
@@ -21,13 +21,13 @@
     from all_values
     where value_field not in (
         {% for value in values %}
-            {% if quote %}
+    {% if quote %}
                 '{{ value }}'
             {% else %}
-                {{ value }}
-            {% endif %}
-            {% if not loop.last %},{% endif %}
-        {% endfor %}
+        {{ value }}
+    {% endif %}
+    {% if not loop.last %},{% endif %}
+{% endfor %}
     )
 {% endmacro %}
 
@@ -37,10 +37,10 @@
       Compatibility wrapper for the newer `arguments:` YAML shape used by
       relationships tests.
     #}
-    {% if arguments is not none %}
-        {% set to = arguments.get('to', to) %}
-        {% set field = arguments.get('field', field) %}
-    {% endif %}
+{% if arguments is not none %}
+    {% set to = arguments.get('to', to) %}
+    {% set field = arguments.get('field', field) %}
+{% endif %}
 
     with child as (
         select {{ column_name }} as from_field

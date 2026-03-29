@@ -11,10 +11,22 @@ Date: 2026-02-26
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
-    col, lit, current_timestamp, when, round as spark_round,
-    to_timestamp, coalesce, trim,
-    from_utc_timestamp, hour, least, greatest,
-    expr, upper, min as spark_min, max as spark_max
+    col,
+    lit,
+    current_timestamp,
+    when,
+    round as spark_round,
+    to_timestamp,
+    coalesce,
+    trim,
+    from_utc_timestamp,
+    hour,
+    least,
+    greatest,
+    expr,
+    upper,
+    min as spark_min,
+    max as spark_max,
 )
 from pyspark.sql.types import *
 from datetime import datetime
@@ -24,8 +36,7 @@ import logging
 
 # Logging configuration
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -49,16 +60,17 @@ class VelibBronzeToSilver:
         """Create a configured Spark session"""
         logger.info("🚀 Creating Spark session...")
 
-        spark = SparkSession.builder \
-            .appName("VelibBronzeToSilver") \
-            .config("spark.jars", "/opt/spark/jars/postgresql-42.7.1.jar") \
-            .config("spark.sql.adaptive.enabled", "true") \
-            .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
-            .config("spark.sql.shuffle.partitions", "10") \
-            .config("spark.sql.session.timeZone", "Europe/Paris") \
-            .config("spark.driver.memory", "2g") \
-            .config("spark.executor.memory", "2g") \
+        spark = (
+            SparkSession.builder.appName("VelibBronzeToSilver")
+            .config("spark.jars", "/opt/spark/jars/postgresql-42.7.1.jar")
+            .config("spark.sql.adaptive.enabled", "true")
+            .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
+            .config("spark.sql.shuffle.partitions", "10")
+            .config("spark.sql.session.timeZone", "Europe/Paris")
+            .config("spark.driver.memory", "2g")
+            .config("spark.executor.memory", "2g")
             .getOrCreate()
+        )
 
         spark.sparkContext.setLogLevel("WARN")
 
@@ -81,7 +93,9 @@ class VelibBronzeToSilver:
 
         if date_filter:
             if hour_filter:
-                full_path = f"{bronze_path}/ingestion_date={date_filter}/hour={hour_filter}/*.parquet"
+                full_path = (
+                    f"{bronze_path}/ingestion_date={date_filter}/hour={hour_filter}/*.parquet"
+                )
                 logger.info(f"   Date filter: {date_filter}, hour: {hour_filter}")
             else:
                 full_path = f"{bronze_path}/ingestion_date={date_filter}/**/*.parquet"
@@ -118,34 +132,31 @@ class VelibBronzeToSilver:
             # Identifiers
             trim(col("stationcode")).alias("station_id"),
             trim(col("name")).alias("station_name"),
-
             # Capacity
             coalesce(col("capacity").cast("integer"), lit(0)).alias("capacity"),
-
             # Bike availability
             coalesce(col("numbikesavailable").cast("integer"), lit(0)).alias("num_bikes_available"),
-            coalesce(col("mechanical").cast("integer"), lit(0)).alias("num_bikes_available_mechanical"),
+            coalesce(col("mechanical").cast("integer"), lit(0)).alias(
+                "num_bikes_available_mechanical"
+            ),
             coalesce(col("ebike").cast("integer"), lit(0)).alias("num_bikes_available_ebike"),
-
             # Dock availability
             coalesce(col("numdocksavailable").cast("integer"), lit(0)).alias("num_docks_available"),
-
             # Status (booleans stored as text: YES/NO)
             upper(trim(coalesce(col("is_installed"), lit("OUI")))).alias("is_installed_raw"),
             upper(trim(coalesce(col("is_renting"), lit("OUI")))).alias("is_renting_raw"),
             upper(trim(coalesce(col("is_returning"), lit("OUI")))).alias("is_returning_raw"),
-
             # Location (flattened coordinates)
             col("lon").cast("double").alias("longitude"),
             col("lat").cast("double").alias("latitude"),
-
             # Geographic information
             trim(col("nom_arrondissement_communes")).alias("district_municipality_names"),
             trim(col("code_insee_commune")).alias("insee_municipality_code"),
-
             # Time metadata
-            from_utc_timestamp(to_timestamp(col("ingestion_timestamp")), "Europe/Paris").alias("ingestion_timestamp"),
-            col("snapshot_id")
+            from_utc_timestamp(to_timestamp(col("ingestion_timestamp")), "Europe/Paris").alias(
+                "ingestion_timestamp"
+            ),
+            col("snapshot_id"),
         )
 
         # ========================================
@@ -153,69 +164,91 @@ class VelibBronzeToSilver:
         # ========================================
         logger.info("  → Step 2: Converting booleans")
 
-        df_clean = df_clean \
-            .withColumn("is_installed",
-                       when(col("is_installed_raw").isin("OUI", "YES", "TRUE", "1"), lit(True))
-                       .otherwise(lit(False))) \
-            .withColumn("is_renting",
-                       when(col("is_renting_raw").isin("OUI", "YES", "TRUE", "1"), lit(True))
-                       .otherwise(lit(False))) \
-            .withColumn("is_returning",
-                       when(col("is_returning_raw").isin("OUI", "YES", "TRUE", "1"), lit(True))
-                       .otherwise(lit(False))) \
+        df_clean = (
+            df_clean.withColumn(
+                "is_installed",
+                when(col("is_installed_raw").isin("OUI", "YES", "TRUE", "1"), lit(True)).otherwise(
+                    lit(False)
+                ),
+            )
+            .withColumn(
+                "is_renting",
+                when(col("is_renting_raw").isin("OUI", "YES", "TRUE", "1"), lit(True)).otherwise(
+                    lit(False)
+                ),
+            )
+            .withColumn(
+                "is_returning",
+                when(col("is_returning_raw").isin("OUI", "YES", "TRUE", "1"), lit(True)).otherwise(
+                    lit(False)
+                ),
+            )
             .drop("is_installed_raw", "is_renting_raw", "is_returning_raw")
+        )
 
         # ========================================
         # STEP 3: Calculate metrics
         # ========================================
         logger.info("  → Step 3: Calculating metrics")
 
-        df_silver = df_clean \
-            .withColumn("snapshot_timestamp", col("ingestion_timestamp")) \
-            .withColumn("snapshot_hour", hour(col("snapshot_timestamp"))) \
+        df_silver = (
+            df_clean.withColumn("snapshot_timestamp", col("ingestion_timestamp"))
+            .withColumn("snapshot_hour", hour(col("snapshot_timestamp")))
             .withColumn(
                 "occupancy_rate",
-                when(col("capacity") > 0,
-                     least(
-                         lit(100.0),
-                         greatest(
-                             lit(0.0),
-                             spark_round((col("num_bikes_available") / col("capacity")) * 100, 2)
-                         )
-                     ))
-                .otherwise(lit(0.0))
-            ) \
+                when(
+                    col("capacity") > 0,
+                    least(
+                        lit(100.0),
+                        greatest(
+                            lit(0.0),
+                            spark_round((col("num_bikes_available") / col("capacity")) * 100, 2),
+                        ),
+                    ),
+                ).otherwise(lit(0.0)),
+            )
             .withColumn(
                 "availability_rate",
-                when(col("capacity") > 0,
-                     least(
-                         lit(100.0),
-                         greatest(
-                             lit(0.0),
-                             spark_round((col("num_docks_available") / col("capacity")) * 100, 2)
-                         )
-                     ))
-                .otherwise(lit(0.0))
-            ) \
+                when(
+                    col("capacity") > 0,
+                    least(
+                        lit(100.0),
+                        greatest(
+                            lit(0.0),
+                            spark_round((col("num_docks_available") / col("capacity")) * 100, 2),
+                        ),
+                    ),
+                ).otherwise(lit(0.0)),
+            )
             .withColumn(
                 "service_rate",
-                when(col("capacity") > 0,
-                     least(
-                         lit(100.0),
-                         greatest(
-                             lit(0.0),
-                             spark_round(((col("num_docks_available") + col("num_bikes_available")) / col("capacity")) * 100, 2)
-                         )
-                     ))
-                .otherwise(lit(0.0))
-            ) \
-            .withColumn("is_empty", col("num_bikes_available") == 0) \
-            .withColumn("is_full", col("num_docks_available") == 0) \
+                when(
+                    col("capacity") > 0,
+                    least(
+                        lit(100.0),
+                        greatest(
+                            lit(0.0),
+                            spark_round(
+                                (
+                                    (col("num_docks_available") + col("num_bikes_available"))
+                                    / col("capacity")
+                                )
+                                * 100,
+                                2,
+                            ),
+                        ),
+                    ),
+                ).otherwise(lit(0.0)),
+            )
+            .withColumn("is_empty", col("num_bikes_available") == 0)
+            .withColumn("is_full", col("num_docks_available") == 0)
             .withColumn(
-                "is_operational",
-                col("is_installed") & col("is_renting") & col("is_returning")
-            ) \
-            .withColumn("processing_timestamp", from_utc_timestamp(current_timestamp(), "Europe/Paris"))
+                "is_operational", col("is_installed") & col("is_renting") & col("is_returning")
+            )
+            .withColumn(
+                "processing_timestamp", from_utc_timestamp(current_timestamp(), "Europe/Paris")
+            )
+        )
 
         # ========================================
         # STEP 4: Filter invalid rows
@@ -225,12 +258,12 @@ class VelibBronzeToSilver:
         initial_count = df_silver.count()
 
         df_silver = df_silver.filter(
-            (col("station_id").isNotNull()) &
-            (col("station_id") != "") &
-            (col("capacity") > 0) &
-            (col("num_bikes_available") >= 0) &
-            (col("num_docks_available") >= 0) &
-            (col("snapshot_timestamp").isNotNull())
+            (col("station_id").isNotNull())
+            & (col("station_id") != "")
+            & (col("capacity") > 0)
+            & (col("num_bikes_available") >= 0)
+            & (col("num_docks_available") >= 0)
+            & (col("snapshot_timestamp").isNotNull())
         )
 
         final_count = df_silver.count()
@@ -250,9 +283,14 @@ class VelibBronzeToSilver:
         """
         logger.info("🏗️  Extracting stations dimension...")
 
-        df_stations = df_silver \
-            .withColumn("rn", expr("row_number() OVER (PARTITION BY station_id ORDER BY snapshot_timestamp DESC)")) \
-            .filter(col("rn") == 1) \
+        df_stations = (
+            df_silver.withColumn(
+                "rn",
+                expr(
+                    "row_number() OVER (PARTITION BY station_id ORDER BY snapshot_timestamp DESC)"
+                ),
+            )
+            .filter(col("rn") == 1)
             .select(
                 col("station_id"),
                 col("station_name"),
@@ -261,23 +299,26 @@ class VelibBronzeToSilver:
                 col("longitude"),
                 col("district_municipality_names"),
                 col("insee_municipality_code"),
-                col("snapshot_timestamp").alias("last_seen_at")
+                col("snapshot_timestamp").alias("last_seen_at"),
             )
+        )
 
         # For first_seen_at, keep the oldest timestamp
-        df_first_seen = df_silver \
-            .groupBy("station_id") \
-            .agg({"snapshot_timestamp": "min"}) \
+        df_first_seen = (
+            df_silver.groupBy("station_id")
+            .agg({"snapshot_timestamp": "min"})
             .withColumnRenamed("min(snapshot_timestamp)", "first_seen_at")
+        )
 
         # Join to get first_seen_at and last_seen_at
         df_stations = df_stations.join(df_first_seen, "station_id", "left")
 
         # Add metadata
-        df_stations = df_stations \
-            .withColumn("is_active", lit(True)) \
-            .withColumn("created_at", from_utc_timestamp(current_timestamp(), "Europe/Paris")) \
+        df_stations = (
+            df_stations.withColumn("is_active", lit(True))
+            .withColumn("created_at", from_utc_timestamp(current_timestamp(), "Europe/Paris"))
             .withColumn("updated_at", from_utc_timestamp(current_timestamp(), "Europe/Paris"))
+        )
 
         station_count = df_stations.count()
         logger.info(f"✅ {station_count:,} unique stations extracted")
@@ -307,7 +348,7 @@ class VelibBronzeToSilver:
             col("is_full"),
             col("is_operational"),
             col("ingestion_timestamp"),
-            col("processing_timestamp")
+            col("processing_timestamp"),
         )
 
         facts_count = df_availability.count()
@@ -329,21 +370,15 @@ class VelibBronzeToSilver:
         jdbc_url = f"jdbc:postgresql://{self.postgres_config['host']}:{self.postgres_config['port']}/{self.postgres_config['database']}"
 
         jdbc_properties = {
-            "user": self.postgres_config['user'],
-            "password": self.postgres_config['password'],
+            "user": self.postgres_config["user"],
+            "password": self.postgres_config["password"],
             "driver": "org.postgresql.Driver",
             "batchsize": "5000",
-            "isolationLevel": "READ_COMMITTED"
+            "isolationLevel": "READ_COMMITTED",
         }
 
         try:
-            df.write \
-                .jdbc(
-                    url=jdbc_url,
-                    table=table_name,
-                    mode=mode,
-                    properties=jdbc_properties
-                )
+            df.write.jdbc(url=jdbc_url, table=table_name, mode=mode, properties=jdbc_properties)
 
             row_count = df.count()
             logger.info(f"✅ {row_count:,} rows written to {table_name}")
@@ -378,7 +413,7 @@ class VelibBronzeToSilver:
         # 2) Restrict existing-key lookup to the current batch time range
         ts_bounds = df_dedup_incoming.agg(
             spark_min("snapshot_timestamp").alias("min_ts"),
-            spark_max("snapshot_timestamp").alias("max_ts")
+            spark_max("snapshot_timestamp").alias("max_ts"),
         ).collect()[0]
 
         min_ts = ts_bounds["min_ts"]
@@ -393,9 +428,9 @@ class VelibBronzeToSilver:
 
         jdbc_url = f"jdbc:postgresql://{self.postgres_config['host']}:{self.postgres_config['port']}/{self.postgres_config['database']}"
         jdbc_properties = {
-            "user": self.postgres_config['user'],
-            "password": self.postgres_config['password'],
-            "driver": "org.postgresql.Driver"
+            "user": self.postgres_config["user"],
+            "password": self.postgres_config["password"],
+            "driver": "org.postgresql.Driver",
         }
 
         existing_keys_query = f"""
@@ -408,23 +443,21 @@ class VelibBronzeToSilver:
         """
 
         df_existing_keys = self.spark.read.jdbc(
-            url=jdbc_url,
-            table=existing_keys_query,
-            properties=jdbc_properties
+            url=jdbc_url, table=existing_keys_query, properties=jdbc_properties
         )
 
         # 3) Keep only rows not already in PostgreSQL
         df_to_insert = df_dedup_incoming.join(
-            df_existing_keys,
-            on=["station_id", "snapshot_timestamp"],
-            how="left_anti"
+            df_existing_keys, on=["station_id", "snapshot_timestamp"], how="left_anti"
         )
 
         to_insert_count = df_to_insert.count()
         skipped_existing = dedup_incoming_count - to_insert_count
 
         if skipped_existing > 0:
-            logger.warning(f"  ⚠️  {skipped_existing:,} rows skipped (already present in PostgreSQL)")
+            logger.warning(
+                f"  ⚠️  {skipped_existing:,} rows skipped (already present in PostgreSQL)"
+            )
 
         if to_insert_count == 0:
             logger.info("  ✅ Nothing new to insert into silver.station_availability")
@@ -446,14 +479,15 @@ class VelibBronzeToSilver:
         jdbc_url = f"jdbc:postgresql://{self.postgres_config['host']}:{self.postgres_config['port']}/{self.postgres_config['database']}"
 
         jdbc_properties = {
-            "user": self.postgres_config['user'],
-            "password": self.postgres_config['password'],
-            "driver": "org.postgresql.Driver"
+            "user": self.postgres_config["user"],
+            "password": self.postgres_config["password"],
+            "driver": "org.postgresql.Driver",
         }
 
         try:
-            df_existing = self.spark.read \
-                .jdbc(jdbc_url, "silver.stations", properties=jdbc_properties)
+            df_existing = self.spark.read.jdbc(
+                jdbc_url, "silver.stations", properties=jdbc_properties
+            )
 
             existing_count = df_existing.count()
             logger.info(f"  📊 {existing_count:,} existing stations in the database")
@@ -462,7 +496,7 @@ class VelibBronzeToSilver:
             df_new = df_new_stations.join(
                 df_existing.select("station_id"),
                 "station_id",
-                "left_anti"  # Keep only stations that do not already exist
+                "left_anti",  # Keep only stations that do not already exist
             )
 
             new_count = df_new.count()
@@ -490,9 +524,9 @@ class VelibBronzeToSilver:
             date_filter: Date in YYYY-MM-DD format (process only that day)
             hour_filter: Hour in HH format (process only that hour)
         """
-        logger.info("="*60)
+        logger.info("=" * 60)
         logger.info("🚀 STARTING BRONZE -> SILVER PIPELINE")
-        logger.info("="*60)
+        logger.info("=" * 60)
 
         start_time = datetime.now()
 
@@ -517,32 +551,29 @@ class VelibBronzeToSilver:
 
             duration = (datetime.now() - start_time).total_seconds()
 
-            logger.info("="*60)
+            logger.info("=" * 60)
             logger.info(f"✅ PIPELINE COMPLETED SUCCESSFULLY in {duration:.2f}s")
-            logger.info("="*60)
+            logger.info("=" * 60)
 
             return {
                 "success": True,
                 "duration_seconds": duration,
                 "stations_processed": df_stations.count(),
-                "facts_processed": df_availability.count()
+                "facts_processed": df_availability.count(),
             }
 
         except Exception as e:
             duration = (datetime.now() - start_time).total_seconds()
-            logger.error("="*60)
+            logger.error("=" * 60)
             logger.error(f"❌ PIPELINE FAILED after {duration:.2f}s")
             logger.error(f"Error: {e}")
-            logger.error("="*60)
+            logger.error("=" * 60)
 
             import traceback
+
             traceback.print_exc()
 
-            return {
-                "success": False,
-                "duration_seconds": duration,
-                "error": str(e)
-            }
+            return {"success": False, "duration_seconds": duration, "error": str(e)}
 
         finally:
             self.spark.stop()
@@ -557,7 +588,7 @@ def main():
         "port": os.getenv("POSTGRES_PORT", "5432"),
         "database": os.getenv("POSTGRES_DB", "velib_dw"),
         "user": os.getenv("POSTGRES_USER", "velib"),
-        "password": os.getenv("POSTGRES_PASSWORD", "velib")
+        "password": os.getenv("POSTGRES_PASSWORD", "velib"),
     }
 
     # Default paths
@@ -586,7 +617,7 @@ def main():
 
     # Detect whether the first argument is a path or a date
     # Expected date format: YYYY-MM-DD
-    if len(date_candidate) == 10 and date_candidate[4] == '-' and date_candidate[7] == '-':
+    if len(date_candidate) == 10 and date_candidate[4] == "-" and date_candidate[7] == "-":
         date_filter = date_candidate
         if len(args) >= 2:
             hour_filter = args[1]
@@ -613,7 +644,6 @@ def main():
     logger.info(f"📅 Processing date: {date_filter}")
     if hour_filter:
         logger.info(f"⏰ Processing hour: {hour_filter}")
-
 
     # Create and run the pipeline
     pipeline = VelibBronzeToSilver(postgres_config)

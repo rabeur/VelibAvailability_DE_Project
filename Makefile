@@ -8,10 +8,17 @@ endif
 COMPOSE_FILE = docker-compose.yml
 PROJECT_NAME = velib_project
 ENV_FILE = .env
+PYTHON = python3
 PARQUET_CLEANUP_IMAGE = velib-cleanup
 PARQUET_CLEANUP_ROOT = $(PWD)/data_lake/bronze/velib
 INGEST_IMAGE = velib-ingest
 INGEST_DATA_LAKE_ROOT = $(PWD)/data_lake
+
+.PHONY: build up up-logs down logs clean first-launch status restart shell fix-perms give-perms \
+	dbt-deps dbt-run dbt-run-staging dbt-run-gold dbt-test dbt-all dbt-docs \
+	silver-schema gold-schema superset-db cleanup-parquet-build cleanup-parquet \
+	cleanup-parquet-delete ingest-build ingest-manual format-python lint-python \
+	format-sql lint-sql help
 
 # Build docker images
 build:
@@ -154,11 +161,21 @@ superset-db:
 	-docker exec velib_postgres psql -U $(POSTGRES_USER) -c "CREATE DATABASE superset_meta;" 2>/dev/null || true
 	@echo "superset_meta database is ready."
 
-# Create the superset_meta database on postgres (idempotent — safe to re-run)
-superset-db:
-	@echo "Creating superset_meta database if not exists..."
-	-docker exec velib_postgres psql -U $(POSTGRES_USER) -c "CREATE DATABASE superset_meta;" 2>/dev/null || true
-	@echo "superset_meta database is ready."
+# Format Python files with Ruff formatter
+format-python:
+	$(PYTHON) -m ruff format airflow scripts spark_jobs superset
+
+# Lint Python files with Ruff
+lint-python:
+	$(PYTHON) -m ruff check airflow scripts spark_jobs superset
+
+# Auto-fix and format SQL files with SQLFluff
+format-sql:
+	sqlfluff fix sql dbt/velib_dbt/models dbt/velib_dbt/macros --force
+
+# Lint SQL files with SQLFluff
+lint-sql:
+	sqlfluff lint sql dbt/velib_dbt/models dbt/velib_dbt/macros
 
 # Build image for parquet cleanup script
 cleanup-parquet-build:
@@ -221,4 +238,8 @@ help:
 	@echo "  ingest-build           : Build docker image for manual ingest_velib script"
 	@echo "  ingest-manual          : Run ingest_velib once manually"
 	@echo "  superset-db            : Create superset_meta database on postgres (idempotent)"
+	@echo "  format-python          : Format Python code with Ruff"
+	@echo "  lint-python            : Lint Python code with Ruff"
+	@echo "  format-sql             : Auto-fix SQL style with SQLFluff"
+	@echo "  lint-sql               : Lint SQL style with SQLFluff"
 	@echo "  help        : This help"

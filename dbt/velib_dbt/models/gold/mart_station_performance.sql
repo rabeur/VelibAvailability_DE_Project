@@ -27,33 +27,33 @@ summary as (
         s.longitude,
 
         -- Observation window
-        count(distinct d.snapshot_date)                                 as days_observed,
-        sum(d.total_snapshots)                                          as total_snapshots,
-        min(d.snapshot_date)                                            as first_data_date,
-        max(d.snapshot_date)                                            as last_data_date,
+        count(distinct d.snapshot_date) as days_observed,
+        sum(d.total_snapshots) as total_snapshots,
+        min(d.snapshot_date) as first_data_date,
+        max(d.snapshot_date) as last_data_date,
 
         -- Central availability metrics
-        round(avg(d.avg_occupancy_rate)::numeric, 2)                    as avg_occupancy_rate,
-        round(avg(d.avg_service_rate)::numeric, 2)                      as avg_service_rate,
-        round(avg(d.avg_bikes_available)::numeric, 2)                   as avg_bikes_available,
-        round(avg(d.avg_docks_available)::numeric, 2)                   as avg_docks_available,
+        round(avg(d.avg_occupancy_rate)::numeric, 2) as avg_occupancy_rate,
+        round(avg(d.avg_service_rate)::numeric, 2) as avg_service_rate,
+        round(avg(d.avg_bikes_available)::numeric, 2) as avg_bikes_available,
+        round(avg(d.avg_docks_available)::numeric, 2) as avg_docks_available,
 
         -- Reliability
-        round(avg(d.daily_operational_pct)::numeric, 2)                 as avg_operational_pct,
+        round(avg(d.daily_operational_pct)::numeric, 2) as avg_operational_pct,
 
         -- Stress
-        round(avg(d.pct_time_empty)::numeric, 2)                        as avg_pct_time_empty,
-        round(avg(d.pct_time_full)::numeric, 2)                         as avg_pct_time_full,
-        sum(d.total_minutes_empty)                                      as total_minutes_empty,
-        sum(d.total_minutes_full)                                       as total_minutes_full,
+        round(avg(d.pct_time_empty)::numeric, 2) as avg_pct_time_empty,
+        round(avg(d.pct_time_full)::numeric, 2) as avg_pct_time_full,
+        sum(d.total_minutes_empty) as total_minutes_empty,
+        sum(d.total_minutes_full) as total_minutes_full,
 
         -- Peak behaviour
-        round(avg(d.peak_hourly_occupancy)::numeric, 2)                 as avg_peak_hourly_occupancy,
+        round(avg(d.peak_hourly_occupancy)::numeric, 2) as avg_peak_hourly_occupancy,
 
-        current_timestamp                                               as dbt_updated_at
+        current_timestamp as dbt_updated_at
 
-    from daily d
-    join stations s on d.station_id = s.station_id
+    from daily as d
+    inner join stations as s on d.station_id = s.station_id
     group by
         d.station_id,
         s.station_name,
@@ -72,16 +72,16 @@ ranked as (
         *,
 
         -- Global rankings (1 = busiest / most stressed)
-        rank() over (order by avg_occupancy_rate    desc)               as global_occupancy_rank,
-        rank() over (order by avg_pct_time_empty    desc)               as most_empty_rank,
-        rank() over (order by avg_pct_time_full     desc)               as most_full_rank,
-        rank() over (order by avg_operational_pct   asc)                as least_reliable_rank,
+        rank() over (order by avg_occupancy_rate desc) as global_occupancy_rank,
+        rank() over (order by avg_pct_time_empty desc) as most_empty_rank,
+        rank() over (order by avg_pct_time_full desc) as most_full_rank,
+        rank() over (order by avg_operational_pct asc) as least_reliable_rank,
 
         -- Within-district ranking
         rank() over (
             partition by district_municipality_names
             order by avg_occupancy_rate desc
-        )                                                               as district_occupancy_rank
+        ) as district_occupancy_rank
 
     from summary
 

@@ -27,8 +27,9 @@ staged as (
         is_operational,
         ingestion_timestamp
     from source
-    where station_id is not null
-      and is_installed = true
+    where
+        station_id is not null
+        and is_installed = true
 
 )
 

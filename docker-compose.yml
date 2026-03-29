@@ -184,7 +184,6 @@ services:
     networks:
       - velib_network
 
-
   superset-init:
     build:
       context: .

@@ -13,22 +13,22 @@ CREATE SCHEMA IF NOT EXISTS gold;
 CREATE SCHEMA IF NOT EXISTS gold_staging;   -- staging views created by dbt
 
 -- Grant full access to the application user
-GRANT USAGE  ON SCHEMA gold         TO velib;
-GRANT CREATE ON SCHEMA gold         TO velib;
+GRANT USAGE ON SCHEMA gold TO velib;
+GRANT CREATE ON SCHEMA gold TO velib;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA gold TO velib;
 
-GRANT USAGE  ON SCHEMA gold_staging TO velib;
+GRANT USAGE ON SCHEMA gold_staging TO velib;
 GRANT CREATE ON SCHEMA gold_staging TO velib;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA gold_staging TO velib;
 
 -- Ensure future objects are also accessible
-ALTER DEFAULT PRIVILEGES IN SCHEMA gold         GRANT ALL ON TABLES    TO velib;
-ALTER DEFAULT PRIVILEGES IN SCHEMA gold         GRANT ALL ON SEQUENCES TO velib;
-ALTER DEFAULT PRIVILEGES IN SCHEMA gold_staging GRANT ALL ON TABLES    TO velib;
+ALTER DEFAULT PRIVILEGES IN SCHEMA gold GRANT ALL ON TABLES TO velib;
+ALTER DEFAULT PRIVILEGES IN SCHEMA gold GRANT ALL ON SEQUENCES TO velib;
+ALTER DEFAULT PRIVILEGES IN SCHEMA gold_staging GRANT ALL ON TABLES TO velib;
 ALTER DEFAULT PRIVILEGES IN SCHEMA gold_staging GRANT ALL ON SEQUENCES TO velib;
 
 -- Descriptive comments
-COMMENT ON SCHEMA gold         IS 'Gold layer — business-ready analytical models created by dbt';
+COMMENT ON SCHEMA gold IS 'Gold layer — business-ready analytical models created by dbt';
 COMMENT ON SCHEMA gold_staging IS 'Staging views created by dbt (lightweight views on Silver)';
 
 -- Summary

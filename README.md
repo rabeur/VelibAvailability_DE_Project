@@ -73,6 +73,31 @@ The pipeline supports spatio-temporal analysis of bike availability to identify 
 | Transformation (planned) | **dbt** | Gold models, tests, and lineage |
 | Visualization (planned) | **Power BI / Streamlit / Metabase** | Dashboards and business insights |
 
+## 🧭 Development Methodology
+
+To keep all components consistent (Airflow DAGs, scripts, Spark jobs, dbt SQL), the project uses one shared set of conventions:
+
+- Python style: `ruff` + `black` settings from [pyproject.toml](pyproject.toml)
+- SQL style: `sqlfluff` settings from [.sqlfluff](.sqlfluff)
+- Naming:
+  - snake_case for Python variables/functions
+  - explicit task names in DAGs (`load_data`, `quality_checks`, etc.)
+  - dbt layer naming kept as `stg_`, `dim_`, `fact_`, `mart_`
+- Comments:
+  - explain why (decision, constraint, edge case), not obvious line-by-line actions
+  - keep comments concise and in English across pipeline code
+
+### Quality Commands
+
+Use these targets before merging changes:
+
+```bash
+make format-python
+make lint-python
+make format-sql
+make lint-sql
+```
+
 ## 📁 Pipeline Components
 
 ### Airflow DAGs

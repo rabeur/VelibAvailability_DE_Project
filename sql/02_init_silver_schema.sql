@@ -44,10 +44,10 @@ CREATE TABLE silver.stations (
 );
 
 -- Indexes to improve performance
-CREATE INDEX idx_stations_geo ON silver.stations(latitude, longitude);
-CREATE INDEX idx_stations_arrondissement ON silver.stations(district_municipality_names);
-CREATE INDEX idx_stations_active ON silver.stations(is_active);
-CREATE INDEX idx_stations_last_seen ON silver.stations(last_seen_at);
+CREATE INDEX idx_stations_geo ON silver.stations (latitude, longitude);
+CREATE INDEX idx_stations_arrondissement ON silver.stations (district_municipality_names);
+CREATE INDEX idx_stations_active ON silver.stations (is_active);
+CREATE INDEX idx_stations_last_seen ON silver.stations (last_seen_at);
 
 -- Comments
 COMMENT ON TABLE silver.stations IS 'Velib stations dimension with static information';
@@ -66,7 +66,7 @@ CREATE TABLE silver.station_availability (
     id BIGSERIAL PRIMARY KEY,
 
     -- Foreign keys
-    station_id VARCHAR(50) NOT NULL REFERENCES silver.stations(station_id),
+    station_id VARCHAR(50) NOT NULL REFERENCES silver.stations (station_id),
 
     -- Time dimension
     snapshot_timestamp TIMESTAMP NOT NULL,
@@ -100,19 +100,19 @@ CREATE TABLE silver.station_availability (
     processing_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     -- Uniqueness constraint: one measurement per station and timestamp
-    CONSTRAINT uk_station_snapshot UNIQUE(station_id, snapshot_timestamp)
+    CONSTRAINT uk_station_snapshot UNIQUE (station_id, snapshot_timestamp)
 );
 
 -- Indexes to optimize analytical queries
-CREATE INDEX idx_availability_timestamp ON silver.station_availability(snapshot_timestamp);
-CREATE INDEX idx_availability_date ON silver.station_availability(snapshot_date);
-CREATE INDEX idx_availability_station_time ON silver.station_availability(station_id, snapshot_timestamp DESC);
-CREATE INDEX idx_availability_hour ON silver.station_availability(snapshot_hour);
-CREATE INDEX idx_availability_dow ON silver.station_availability(snapshot_day_of_week);
-CREATE INDEX idx_availability_occupancy ON silver.station_availability(occupancy_rate);
-CREATE INDEX idx_availability_empty ON silver.station_availability(is_empty) WHERE is_empty = TRUE;
-CREATE INDEX idx_availability_full ON silver.station_availability(is_full) WHERE is_full = TRUE;
-CREATE INDEX idx_availability_operational ON silver.station_availability(is_operational);
+CREATE INDEX idx_availability_timestamp ON silver.station_availability (snapshot_timestamp);
+CREATE INDEX idx_availability_date ON silver.station_availability (snapshot_date);
+CREATE INDEX idx_availability_station_time ON silver.station_availability (station_id, snapshot_timestamp DESC);
+CREATE INDEX idx_availability_hour ON silver.station_availability (snapshot_hour);
+CREATE INDEX idx_availability_dow ON silver.station_availability (snapshot_day_of_week);
+CREATE INDEX idx_availability_occupancy ON silver.station_availability (occupancy_rate);
+CREATE INDEX idx_availability_empty ON silver.station_availability (is_empty) WHERE is_empty = TRUE;
+CREATE INDEX idx_availability_full ON silver.station_availability (is_full) WHERE is_full = TRUE;
+CREATE INDEX idx_availability_operational ON silver.station_availability (is_operational);
 
 -- Date partitioning (optional, uncomment for high volumes)
 -- CREATE TABLE silver.station_availability_2026_02 PARTITION OF silver.station_availability
@@ -152,9 +152,9 @@ SELECT DISTINCT ON (sa.station_id)
     s.latitude,
     s.longitude,
     s.insee_municipality_code
-FROM silver.station_availability sa
-JOIN silver.stations s ON sa.station_id = s.station_id
-ORDER BY sa.station_id, sa.snapshot_timestamp DESC;
+FROM silver.station_availability AS sa
+INNER JOIN silver.stations AS s ON sa.station_id = s.station_id
+ORDER BY sa.station_id ASC, sa.snapshot_timestamp DESC;
 
 COMMENT ON VIEW silver.v_latest_station_availability IS 'View of the latest known availability for each station';
 
@@ -163,16 +163,16 @@ CREATE OR REPLACE VIEW silver.v_daily_station_stats AS
 SELECT
     station_id,
     snapshot_date,
-    COUNT(*) as num_snapshots,
-    ROUND(AVG(num_bikes_available), 2) as avg_bikes_available,
-    ROUND(AVG(num_docks_available), 2) as avg_docks_available,
-    ROUND(AVG(occupancy_rate), 2) as avg_occupancy_rate,
-    ROUND(AVG(service_rate), 2) as avg_service_rate,
-    MAX(num_bikes_available) as max_bikes_available,
-    MIN(num_bikes_available) as min_bikes_available,
-    SUM(CASE WHEN is_empty THEN 1 ELSE 0 END) as times_empty,
-    SUM(CASE WHEN is_full THEN 1 ELSE 0 END) as times_full,
-    ROUND(AVG(CASE WHEN is_operational THEN 1 ELSE 0 END) * 100, 2) as operational_pct
+    COUNT(*) AS num_snapshots,
+    ROUND(AVG(num_bikes_available), 2) AS avg_bikes_available,
+    ROUND(AVG(num_docks_available), 2) AS avg_docks_available,
+    ROUND(AVG(occupancy_rate), 2) AS avg_occupancy_rate,
+    ROUND(AVG(service_rate), 2) AS avg_service_rate,
+    MAX(num_bikes_available) AS max_bikes_available,
+    MIN(num_bikes_available) AS min_bikes_available,
+    SUM(CASE WHEN is_empty THEN 1 ELSE 0 END) AS times_empty,
+    SUM(CASE WHEN is_full THEN 1 ELSE 0 END) AS times_full,
+    ROUND(AVG(CASE WHEN is_operational THEN 1 ELSE 0 END) * 100, 2) AS operational_pct
 FROM silver.station_availability
 GROUP BY station_id, snapshot_date;
 
@@ -196,9 +196,9 @@ $$ LANGUAGE plpgsql;
 
 -- Trigger: Auto-update updated_at on the stations table
 CREATE TRIGGER trigger_stations_updated_at
-    BEFORE UPDATE ON silver.stations
-    FOR EACH ROW
-    EXECUTE FUNCTION silver.update_updated_at_column();
+BEFORE UPDATE ON silver.stations
+FOR EACH ROW
+EXECUTE FUNCTION silver.update_updated_at_column();
 
 -- ============================================================================
 -- GRANTS (adapt to your users as needed)
@@ -218,15 +218,15 @@ ANALYZE silver.station_availability;
 
 -- Display a summary
 SELECT
-    'silver.stations' as table_name,
-    COUNT(*) as row_count,
-    pg_size_pretty(pg_total_relation_size('silver.stations')) as total_size
+    'silver.stations' AS table_name,
+    COUNT(*) AS row_count,
+    PG_SIZE_PRETTY(PG_TOTAL_RELATION_SIZE('silver.stations')) AS total_size
 FROM silver.stations
 UNION ALL
 SELECT
-    'silver.station_availability' as table_name,
-    COUNT(*) as row_count,
-    pg_size_pretty(pg_total_relation_size('silver.station_availability')) as total_size
+    'silver.station_availability' AS table_name,
+    COUNT(*) AS row_count,
+    PG_SIZE_PRETTY(PG_TOTAL_RELATION_SIZE('silver.station_availability')) AS total_size
 FROM silver.station_availability;
 
 -- ============================================================================

@@ -1,0 +1,37 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [
+  ".git",
+  ".venv",
+  "venv",
+  "__pycache__",
+  "dbt/velib_dbt/target",
+  "dbt/velib_dbt/dbt_packages",
+  "airflow/logs",
+  "notebooks",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | venv
+  | __pycache__
+  | airflow/logs
+  | dbt/velib_dbt/(target|dbt_packages)
+  | notebooks
+)/
+'''

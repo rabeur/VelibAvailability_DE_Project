@@ -33,6 +33,7 @@ DBT_WORKDIR = "/usr/app/dbt"
 # Helper
 # ---------------------------------------------------------------------------
 
+
 def _exec_dbt(dbt_command: str) -> None:
     """
     Run a dbt CLI command inside the running `velib_dbt` container
@@ -47,9 +48,9 @@ def _exec_dbt(dbt_command: str) -> None:
     container = client.containers.get("velib_dbt")
 
     full_cmd = f"dbt {dbt_command} --profiles-dir {DBT_WORKDIR}"
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"🔧 Running: {full_cmd}")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     exit_code, output = container.exec_run(
         full_cmd,
@@ -61,9 +62,7 @@ def _exec_dbt(dbt_command: str) -> None:
         print(output.decode("utf-8", errors="replace"))
 
     if exit_code != 0:
-        raise RuntimeError(
-            f"dbt command failed (exit_code={exit_code}): {full_cmd}"
-        )
+        raise RuntimeError(f"dbt command failed (exit_code={exit_code}): {full_cmd}")
 
     print(f"✅ dbt {dbt_command} — Success")
 
@@ -71,6 +70,7 @@ def _exec_dbt(dbt_command: str) -> None:
 # ---------------------------------------------------------------------------
 # Task callables
 # ---------------------------------------------------------------------------
+
 
 def task_dbt_deps(**context):
     """Install dbt package dependencies (dbt-utils etc.)."""
@@ -107,12 +107,11 @@ with DAG(
     dag_id="velib_dbt_gold_transformation",
     default_args=default_args,
     description="Build the Gold analytical layer from Silver data using dbt",
-    schedule_interval="0 3 * * *",   # Daily at 03:00 — after Silver pipeline (hourly)
+    schedule_interval="0 3 * * *",  # Daily at 03:00 — after Silver pipeline (hourly)
     catchup=False,
     max_active_runs=1,
     tags=["dbt", "gold", "transformation"],
 ) as dag:
-
     dbt_deps = PythonOperator(
         task_id="dbt_deps",
         python_callable=task_dbt_deps,

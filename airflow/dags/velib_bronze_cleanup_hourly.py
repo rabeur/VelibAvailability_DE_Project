@@ -43,9 +43,7 @@ def cleanup_previous_hour_partition(**context):
     date = dt.format("YYYY-MM-DD")
     hour = dt.format("HH")
 
-    partition_path = Path(
-        f"/opt/airflow/data_lake/bronze/velib/ingestion_date={date}/hour={hour}"
-    )
+    partition_path = Path(f"/opt/airflow/data_lake/bronze/velib/ingestion_date={date}/hour={hour}")
     print(f"Scanning partition: {partition_path}")
 
     if not partition_path.exists() or not partition_path.is_dir():
@@ -112,9 +110,7 @@ def cleanup_previous_hour_partition(**context):
     print(f"  Remaining valid files: {len(valid_remaining)}")
 
     if not valid_remaining:
-        raise ValueError(
-            f"No valid parquet files remain in {partition_path} after cleanup"
-        )
+        raise ValueError(f"No valid parquet files remain in {partition_path} after cleanup")
 
     context["ti"].xcom_push(key="partition_path", value=str(partition_path))
     context["ti"].xcom_push(key="remaining_valid_files", value=len(valid_remaining))

@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta
+import glob
+import os
+from urllib.parse import urlparse
+
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-import os
-from datetime import datetime, timedelta
-import subprocess
 import psycopg2
-from urllib.parse import urlparse
+
 
 default_args = {
     "owner": "velib_team",
@@ -17,83 +18,59 @@ default_args = {
     "retry_delay": timedelta(minutes=5),
 }
 
-def run_command(command: str, description: str) -> bool:
-    """
-    Run a shell command and print the result
 
-    Returns:
-        True on success, otherwise False
-    """
-    print(f"\n{'='*70}")
-    print(f"🔧 {description}")
-    print(f"{'='*70}")
-    print(f"Commande: {command}\n")
+def _get_previous_hour_partition(context) -> tuple[str, str]:
+    dt = context["data_interval_end"].in_timezone("Europe/Paris").subtract(hours=1)
+    return dt.format("YYYY-MM-DD"), dt.format("HH")
 
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            check=True,
-            capture_output=True,
-            text=True
-        )
 
-        if result.stdout:
-            print(result.stdout)
+def _get_dw_connection() -> psycopg2.extensions.connection:
+    """Build a psycopg2 connection from the Airflow SQLAlchemy connection env var."""
+    conn_str = os.environ["AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"]
+    normalized_conn_str = conn_str.replace("postgresql+psycopg2://", "postgresql://").replace(
+        "postgresql+psycopg://", "postgresql://"
+    )
+    parsed = urlparse(normalized_conn_str)
 
-        print(f"✅ {description} - Success")
-        return True
-
-    except subprocess.CalledProcessError as e:
-        print(f"❌ {description} - Failed")
-        print(f"Return code: {e.returncode}")
-        if e.stdout:
-            print("STDOUT:", e.stdout)
-        if e.stderr:
-            print("STDERR:", e.stderr)
-        return False
+    return psycopg2.connect(
+        host=parsed.hostname,
+        port=parsed.port or 5432,
+        user=parsed.username,
+        password=parsed.password,
+        dbname=parsed.path.lstrip("/"),
+    )
 
 
 def check_bronze_data(**context) -> bool:
-    """Check whether Bronze data exists for the previous hour"""
-    dt = context["data_interval_end"].in_timezone("Europe/Paris").subtract(hours=1)  # Check the previous hour to ensure the data is available
-    date = dt.format("YYYY-MM-DD")
-    hour = dt.format("HH")
+    """Ensure Bronze data exists for the previous hour."""
+    date, hour = _get_previous_hour_partition(context)
+    bronze_path = f"/opt/airflow/data_lake/bronze/velib/ingestion_date={date}/hour={hour}"
 
-    print(f"\n🔍 Checking Bronze data for {date} at {hour}:00...")
+    print(f"Checking Bronze data for {date} at {hour}:00")
 
-    base_path = "/opt/airflow/data_lake/bronze/velib"
+    if not os.path.isdir(bronze_path):
+        raise FileNotFoundError(f"Bronze partition not found: {bronze_path}")
 
+    parquet_files = glob.glob(f"{bronze_path}/*.parquet")
+    if not parquet_files:
+        raise FileNotFoundError(f"No parquet files found in partition: {bronze_path}")
 
-    bronze_path = f"{base_path}/ingestion_date={date}/hour={hour}"
-    if os.path.isdir(bronze_path):
-        import glob
-        files = glob.glob(f"{bronze_path}/*.parquet")
-        file_count = len(files)
-        if file_count > 0:
-            print(f"  ✅ {file_count} Parquet files found for {hour}:00")
-            return True
+    print(f"Found {len(parquet_files)} parquet file(s) for {date} {hour}:00")
+    return True
 
-    print(f"  ❌ No Bronze data for {date} at {hour}:00")
-    print(f"     Checked path: {bronze_path}")
-    return False
 
 def run_spark_job(**context) -> bool:
-    """Run the Spark job through the Docker Python SDK (mounted /var/run/docker.sock)"""
+    """Run the Spark bronze_to_silver job inside the velib_spark container."""
     import docker as docker_sdk
 
-    dt = context["data_interval_end"].in_timezone("Europe/Paris").subtract(hours=1)
-    date = dt.format("YYYY-MM-DD")
-    hour = dt.format("HH")
+    date, hour = _get_previous_hour_partition(context)
 
-    print(f"\n{'='*70}")
-    print(f"🔧 Spark transformation for {date} at {hour}:00")
-    print(f"{'='*70}")
+    print(f"Starting Spark transformation for {date} at {hour}:00")
 
     client = docker_sdk.from_env()
     container = client.containers.get("velib_spark")
 
-    # Download the PostgreSQL driver if needed
+    # Ensure PostgreSQL JDBC driver is available for Spark writes.
     _, dl_output = container.exec_run(
         "bash -c 'if [ ! -f /opt/spark/jars/postgresql-42.7.1.jar ]; then "
         "wget -q https://jdbc.postgresql.org/download/postgresql-42.7.1.jar "
@@ -102,53 +79,37 @@ def run_spark_job(**context) -> bool:
     if dl_output:
         print(dl_output.decode("utf-8", errors="replace"))
 
-    cmd = (
+    command = (
         "/opt/spark/bin/spark-submit "
         "--jars /opt/spark/jars/postgresql-42.7.1.jar "
         "--master local[*] "
         "--driver-memory 2g "
         "--executor-memory 2g "
         "--conf spark.sql.shuffle.partitions=10 "
-        f"/opt/spark_jobs/bronze_to_silver.py "
-        f"/opt/data_lake/bronze/velib "
-        f"{date} {hour}"
+        "/opt/spark_jobs/bronze_to_silver.py "
+        f"/opt/data_lake/bronze/velib {date} {hour}"
     )
-    print(f"Command: {cmd}\n")
+    print(f"Spark command: {command}")
 
-    exit_code, output = container.exec_run(cmd, stream=False)
+    exit_code, output = container.exec_run(command, stream=False)
     if output:
         print(output.decode("utf-8", errors="replace"))
 
     if exit_code != 0:
-        raise Exception(f"The Spark job failed with return code {exit_code}")
+        raise RuntimeError(f"Spark job failed with return code {exit_code}")
 
-    print(f"✅ Spark transformation for {date} at {hour}:00 - Success")
+    print(f"Spark transformation for {date} at {hour}:00 succeeded")
     return True
 
+
 def validate_silver_data(**context) -> bool:
-    """Validate that data was loaded into Silver using a direct psycopg2 connection"""
-    import psycopg2
-    from urllib.parse import urlparse
-
-    dt = context["data_interval_end"].in_timezone("Europe/Paris").subtract(hours=1)
-    date = dt.format("YYYY-MM-DD")
-    hour = dt.format("HH")
-
-    print(f"\n📊 Validating Silver data for {date} at {hour}:00")
-
-    # Parse the Airflow connection string: postgresql+psycopg2://user:pass@host:port/db
-    conn_str = os.environ["AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"]
-    parsed = urlparse(conn_str.replace("postgresql+psycopg2://", "postgresql://"))
-
-    conn = psycopg2.connect(
-        host=parsed.hostname,
-        port=parsed.port or 5432,
-        user=parsed.username,
-        password=parsed.password,
-        dbname=parsed.path.lstrip("/"),
-    )
-
+    """Validate Silver rows loaded for the previous hour."""
+    date, hour = _get_previous_hour_partition(context)
     hour_timestamp = f"{date} {hour.zfill(2)}:00:00"
+
+    print(f"Validating Silver data for {date} at {hour}:00")
+
+    conn = _get_dw_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -164,38 +125,25 @@ def validate_silver_data(**context) -> bool:
                 """,
                 (hour_timestamp, hour_timestamp),
             )
-            row = cur.fetchone()
-            total_rows, unique_stations, earliest, latest = row
-            print(f"  total_rows={total_rows}, unique_stations={unique_stations}")
-            print(f"  earliest={earliest}, latest={latest}")
+            total_rows, unique_stations, earliest, latest = cur.fetchone()
     finally:
         conn.close()
 
-    if total_rows == 0:
-        print("  ❌ No Silver data found for this hour")
-        return False
+    print(f"total_rows={total_rows}, unique_stations={unique_stations}")
+    print(f"earliest={earliest}, latest={latest}")
 
-    print(f"  ✅ {total_rows} rows validated for {unique_stations} stations")
+    if total_rows == 0:
+        raise ValueError(f"No Silver data found for {date} at {hour}:00")
+
+    print(f"Silver validation succeeded with {total_rows} rows")
     return True
 
-def show_summary():
-    """Display a summary of Silver data"""
 
+def show_summary() -> None:
+    """Display a compact summary of Silver tables."""
+    print("Building Silver data summary")
 
-    print("\n📈 Silver data summary...")
-
-    # Parse the Airflow connection string: postgresql+psycopg2://user:pass@host:port/db
-    conn_str = os.environ["AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"]
-    parsed = urlparse(conn_str.replace("postgresql+psycopg2://", "postgresql://"))
-
-    conn = psycopg2.connect(
-        host=parsed.hostname,
-        port=parsed.port or 5432,
-        user=parsed.username,
-        password=parsed.password,
-        dbname=parsed.path.lstrip("/"),
-    )
-
+    conn = _get_dw_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM silver.stations;")
@@ -217,22 +165,21 @@ def show_summary():
                 """
             )
             last_snapshot = cur.fetchone()
-
-            print(f"  ✅ Total number of stations: {total_stations}")
-            print(f"  ✅ Total number of snapshots: {total_snapshots}")
-
-            if last_snapshot:
-                snapshot_hour, rows_added, stations_count = last_snapshot
-                print("  ✅ Latest snapshot added:")
-                print(f"     - Date: {snapshot_hour.strftime('%Y-%m-%d')}")
-                print(f"     - Time: {snapshot_hour.strftime('%H:%M:%S')}")
-                print(f"     - Rows added: {rows_added}")
-                print(f"     - Stations: {stations_count}")
-            else:
-                print("  ⚠️ No snapshot available in silver.station_availability")
     finally:
         conn.close()
 
+    print(f"Total stations: {total_stations}")
+    print(f"Total snapshots: {total_snapshots}")
+
+    if last_snapshot:
+        snapshot_hour, rows_added, stations_count = last_snapshot
+        print("Latest snapshot loaded:")
+        print(f"  date={snapshot_hour.strftime('%Y-%m-%d')}")
+        print(f"  time={snapshot_hour.strftime('%H:%M:%S')}")
+        print(f"  rows_added={rows_added}")
+        print(f"  stations_count={stations_count}")
+    else:
+        print("No snapshot available in silver.station_availability")
 
 
 with DAG(
@@ -243,29 +190,24 @@ with DAG(
     max_active_runs=1,
     tags=["velib", "bronze", "silver", "spark", "hourly"],
 ) as dag:
-
-    # Task 1: Check Bronze data for the previous hour
     load_task = PythonOperator(
-        task_id='load_data',
+        task_id="load_data",
         python_callable=check_bronze_data,
     )
 
-    # Task 2: Run the Spark job to transform data from Bronze to Silver
-    run_spark_job = PythonOperator(
-        task_id='run_spark_job',
+    run_spark_task = PythonOperator(
+        task_id="run_spark_job",
         python_callable=run_spark_job,
     )
 
-    # Task 3: Validate Silver data
     validate_task = PythonOperator(
-        task_id='validate_silver_data',
+        task_id="validate_silver_data",
         python_callable=validate_silver_data,
     )
 
-    # Task 4: Show a summary of Silver data
     summary_task = PythonOperator(
-        task_id='show_summary',
+        task_id="show_summary",
         python_callable=show_summary,
     )
 
-    load_task >> run_spark_job >> validate_task >> summary_task
+    load_task >> run_spark_task >> validate_task >> summary_task

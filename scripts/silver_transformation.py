@@ -18,19 +18,13 @@ def run_command(command: str, description: str) -> bool:
     Returns:
         True on success, otherwise False
     """
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"🔧 {description}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"Commande: {command}\n")
 
     try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            check=True,
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
 
         if result.stdout:
             print(result.stdout)
@@ -129,10 +123,14 @@ def check_bronze_data(date: str, hour: str | None = None) -> bool:
     else:
         if hour is not None:
             print(f"  ❌ No Bronze data for {date_part} at {hour}:00")
-            print(f"     Checked path: /opt/airflow/data_lake/bronze/velib/ingestion_date={date_part}/hour={hour}")
+            print(
+                f"     Checked path: /opt/airflow/data_lake/bronze/velib/ingestion_date={date_part}/hour={hour}"
+            )
         else:
             print(f"  ❌ No Bronze data for {date_part}")
-            print(f"     Checked path: /opt/airflow/data_lake/bronze/velib/ingestion_date={date_part}")
+            print(
+                f"     Checked path: /opt/airflow/data_lake/bronze/velib/ingestion_date={date_part}"
+            )
         return False
 
 
@@ -226,21 +224,19 @@ def show_summary():
     print("\n📈 Silver data summary...")
 
     queries = [
-        ("Total number of stations",
-         "SELECT COUNT(*) as total FROM silver.stations;"),
-
-        ("Total number of snapshots",
-         "SELECT COUNT(*) as total FROM silver.station_availability;"),
-
-        ("Latest hourly snapshots",
-         """SELECT
+        ("Total number of stations", "SELECT COUNT(*) as total FROM silver.stations;"),
+        ("Total number of snapshots", "SELECT COUNT(*) as total FROM silver.station_availability;"),
+        (
+            "Latest hourly snapshots",
+            """SELECT
                 date_trunc('hour', snapshot_timestamp) as hour,
                 COUNT(*) as snapshots,
                 COUNT(DISTINCT station_id) as stations
             FROM silver.station_availability
             GROUP BY date_trunc('hour', snapshot_timestamp)
             ORDER BY hour DESC
-            LIMIT 5;"""),
+            LIMIT 5;""",
+        ),
     ]
 
     for title, query in queries:
@@ -255,26 +251,24 @@ def main():
         description="Manual test for the Bronze -> Silver transformation"
     )
     parser.add_argument(
-        '--date',
+        "--date",
         type=str,
-        default=(datetime.now()).strftime('%Y-%m-%d'),
-        help='Day to process (format YYYY-MM-DD, default: current day)'
+        default=(datetime.now()).strftime("%Y-%m-%d"),
+        help="Day to process (format YYYY-MM-DD, default: current day)",
     )
     parser.add_argument(
-        '--hour',
+        "--hour",
         type=str,
         default=None,
-        help='Hour to process (format HH, optional: if omitted, processes the full day)'
+        help="Hour to process (format HH, optional: if omitted, processes the full day)",
     )
     parser.add_argument(
-        '--skip-validation',
-        action='store_true',
-        help='Skip prerequisite validation'
+        "--skip-validation", action="store_true", help="Skip prerequisite validation"
     )
     parser.add_argument(
-        '--summary-only',
-        action='store_true',
-        help='Display only the summary (without running the job)'
+        "--summary-only",
+        action="store_true",
+        help="Display only the summary (without running the job)",
     )
 
     args = parser.parse_args()

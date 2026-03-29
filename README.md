@@ -14,15 +14,16 @@ The pipeline supports spatio-temporal analysis of bike availability to identify 
 - [x] Store raw snapshots in a Bronze data lake (Parquet, partitioned)
 - [x] Transform Bronze data into a Silver warehouse model (Spark + PostgreSQL)
 - [x] Run automated data quality checks and persist reports
-- [ ] Add dbt transformation layer for Gold business models
-- [ ] Build BI dashboards and operational reporting
+- [x] Add dbt transformation layer for Gold business models
+- [x] Add a dashboarding layer with Apache Superset
 
 ## ✅ Current Progress
 
 ### Phase 1: Infrastructure ✅ Completed
 - [x] Docker Compose stack: PostgreSQL, Spark, Jupyter, Airflow
 - [x] Local-first environment with reproducible setup via Makefile
-- [x] SQL initialization for Silver schema
+- [x] SQL initialization for Silver and Gold schemas
+- [x] Superset service with dedicated metadata database (`superset_meta`)
 
 ### Phase 2: Ingestion ✅ Completed
 - [x] Airflow ingestion DAG running every minute
@@ -36,15 +37,21 @@ The pipeline supports spatio-temporal analysis of bike availability to identify 
 - [x] Partitioned text reports in `data_lake/reports/data_quality/report_date=YYYY-MM-DD/hour=HH/`
 
 ### Phase 4: Bronze → Silver ✅ Implemented (core)
-- [x] Hourly Airflow DAG for Bronze-to-Silver transformations
+- [x] Hourly Airflow Bronze cleanup DAG (corrupted + duplicate parquet handling)
+- [x] Trigger-based Bronze-to-Silver DAG execution after cleanup
 - [x] Spark transformation job with data cleaning, normalization, and metrics
 - [x] PostgreSQL Silver loading and validation
 - [x] Runtime summary task with station/snapshot monitoring
 
-### Phase 5: Analytics & Visualization ⏳ In progress
-- [ ] dbt models (Gold layer)
-- [ ] Dashboarding (Power BI / Streamlit / Metabase)
-- [ ] Advanced KPI catalog and alerting strategy
+### Phase 5: Gold Analytics ✅ Implemented
+- [x] dbt Gold models (dimensions, facts, marts)
+- [x] Airflow dbt DAG (`velib_dbt_gold_transformation`)
+- [x] dbt run/test workflow from Makefile
+
+### Phase 6: Visualization ✅ Implemented (base)
+- [x] Apache Superset service integrated in Docker Compose
+- [x] Superset initialization flow (metadata DB + admin bootstrap)
+- [x] PostgreSQL connectivity ready for Gold dashboarding
 
 ## 🆕 Recent Evolution Added to the Project
 
@@ -52,7 +59,8 @@ The pipeline supports spatio-temporal analysis of bike availability to identify 
 - Docker socket permission handling was added via `DOCKER_GID` and `group_add` in Airflow services.
 - Silver validation and summary tasks use direct PostgreSQL connections (no `docker exec` dependency).
 - Data-quality reports were moved to partitioned paths aligned with data-lake conventions.
-- Codebase comments/logs were standardized to English in key pipeline files.
+- Bronze hourly cleanup now removes corrupted Parquet files and minute-level duplicates before Silver transformation.
+- Code style tooling was added (`ruff`, `black`, `sqlfluff`) with Makefile targets.
 
 ## 🏗️ Architecture
 
@@ -70,8 +78,8 @@ The pipeline supports spatio-temporal analysis of bike availability to identify 
 | Data Lake | **Local filesystem + Parquet** | Raw snapshot storage with partitioning |
 | Interactive Analysis | **Jupyter PySpark Notebook** | Exploration and profiling |
 | Infrastructure | **Docker + Docker Compose** | Reproducible local deployment |
-| Transformation (planned) | **dbt** | Gold models, tests, and lineage |
-| Visualization (planned) | **Power BI / Streamlit / Metabase** | Dashboards and business insights |
+| Transformation | **dbt** | Gold models, tests, and lineage |
+| Visualization | **Apache Superset** | BI dashboards on PostgreSQL Gold models |
 
 ## 🧭 Development Methodology
 
@@ -105,8 +113,14 @@ make lint-sql
   - API extraction, schema enforcement, Bronze write, basic validation
 - `velib_data_quality` (every minute)
   - Snapshot quality checks and partitioned report generation
-- `velib_silver_transformation_hourly` (hourly)
-  - Bronze availability check, Spark job execution, Silver validation, summary
+- `velib_bronze_cleanup_hourly` (hourly)
+  - Checks previous-hour Bronze partition
+  - Removes corrupted parquet and minute-level duplicates
+  - Triggers Silver transformation DAG
+- `velib_silver_transformation_hourly` (trigger-based)
+  - Bronze availability check, Spark execution, Silver validation, summary
+- `velib_dbt_gold_transformation` (daily 03:00)
+  - dbt deps → staging → gold → tests
 
 ### Spark Job
 - `spark_jobs/bronze_to_silver.py`
@@ -133,8 +147,12 @@ Main fields include:
 - `silver.stations` (station dimension)
 - `silver.station_availability` (hourly/time-based facts)
 
-### Gold Layer (planned)
-Business-oriented models and KPIs via dbt.
+### Gold Layer (dbt)
+- `gold.dim_stations`
+- `gold.fact_hourly_availability`
+- `gold.fact_daily_station_stats`
+- `gold.mart_station_performance`
+- `gold.mart_peak_hours_by_district`
 
 ## 🚀 Getting Started
 
@@ -142,6 +160,7 @@ Business-oriented models and KPIs via dbt.
 - Docker Desktop or Docker Engine
 - Linux/WSL terminal
 - `make`
+- `python3` (recommended for local lint/format tooling)
 
 ### Installation
 
@@ -161,6 +180,7 @@ make status
 - Airflow: `http://localhost:8081`
 - Spark Master UI: `http://localhost:8080`
 - Jupyter: `http://localhost:8888`
+- Superset: `http://localhost:8088`
 - PostgreSQL: `localhost:5432`
 - pgAdmin: `http://localhost:5050`
 
@@ -193,10 +213,10 @@ Each report contains:
 
 ## 🔮 Next Steps
 
-- [ ] Add dbt project structure and Gold marts
-- [ ] Add semantic metrics and KPI definitions
-- [ ] Add dashboard layer and stakeholder views
-- [ ] Improve alerting channels (email/Slack)
+- [ ] Add Superset datasets/charts export (versioned dashboard-as-code)
+- [ ] Add semantic KPI dictionary (business glossary)
+- [ ] Add alerting channels (email/Slack) for pipeline + data-quality incidents
+- [ ] Add CI pipeline for `ruff` + `sqlfluff` + dbt tests
 - [ ] Prepare cloud migration path (GCP/AWS)
 
 ## 🌍 Local-first, Cloud-ready

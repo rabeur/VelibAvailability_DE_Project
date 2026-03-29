@@ -8,6 +8,10 @@ endif
 COMPOSE_FILE = docker-compose.yml
 PROJECT_NAME = velib_project
 ENV_FILE = .env
+PARQUET_CLEANUP_IMAGE = velib-cleanup
+PARQUET_CLEANUP_ROOT = $(PWD)/data_lake/bronze/velib
+INGEST_IMAGE = velib-ingest
+INGEST_DATA_LAKE_ROOT = $(PWD)/data_lake
 
 # Build docker images
 build:
@@ -139,6 +143,35 @@ silver-schema:
 gold-schema:
 	docker exec -i velib_postgres psql -U velib -d velib_dw < sql/03_init_gold_schema.sql
 
+# Build image for parquet cleanup script
+cleanup-parquet-build:
+	docker build -f scripts/cleanup_parquet/Dockerfile.cleanup_parquet -t $(PARQUET_CLEANUP_IMAGE) .
+
+# Dry-run parquet cleanup (scan only)
+cleanup-parquet: cleanup-parquet-build
+	@echo "Scanning parquet files under: $(PARQUET_CLEANUP_ROOT)"
+	docker run --rm \
+		-v "$(PARQUET_CLEANUP_ROOT):/data" \
+		$(PARQUET_CLEANUP_IMAGE) --root /data
+
+# Delete corrupted + duplicate parquet files
+cleanup-parquet-delete: cleanup-parquet-build
+	@echo "Deleting corrupted/duplicate parquet files under: $(PARQUET_CLEANUP_ROOT)"
+	docker run --rm \
+		-v "$(PARQUET_CLEANUP_ROOT):/data" \
+		$(PARQUET_CLEANUP_IMAGE) --root /data --delete
+
+# Build image for manual ingestion script
+ingest-build:
+	docker build -f scripts/ingestion/Dockerfile.ingest_velib -t $(INGEST_IMAGE) .
+
+# Run ingestion once manually
+ingest-manual: ingest-build
+	@echo "Running manual ingestion and writing outputs under: $(INGEST_DATA_LAKE_ROOT)"
+	docker run --rm \
+		-v "$(INGEST_DATA_LAKE_ROOT):/app/data_lake" \
+		$(INGEST_IMAGE)
+
 # ─────────────────────────────────────────────────────────────────────────────
 
 # help
@@ -165,4 +198,9 @@ help:
 	@echo "  dbt-docs    : Generate and serve dbt docs on port 8082"
 	@echo "  silver-schema : Create silver schema manually (if DB already existed)"
 	@echo "  gold-schema : Create gold schema manually (if DB already existed)"
+	@echo "  cleanup-parquet-build  : Build docker image for parquet cleanup script"
+	@echo "  cleanup-parquet        : Dry-run scan of corrupted/duplicate parquet files"
+	@echo "  cleanup-parquet-delete : Delete corrupted/duplicate parquet files"
+	@echo "  ingest-build           : Build docker image for manual ingest_velib script"
+	@echo "  ingest-manual          : Run ingest_velib once manually"
 	@echo "  help        : This help"

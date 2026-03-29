@@ -55,6 +55,8 @@ first-launch:
 		echo "AIRFLOW_UID=50000" >> $(ENV_FILE); \
 		echo "AIRFLOW_GID=0" >> $(ENV_FILE); \
 		echo "DOCKER_GID=1001" >> $(ENV_FILE); \
+		echo "SUPERSET_SECRET_KEY=$$(python3 -c 'import secrets; print(secrets.token_hex(32))')" >> $(ENV_FILE); \
+		echo "SUPERSET_ADMIN_PASSWORD=admin" >> $(ENV_FILE); \
 	else \
 		echo ".env already exist."; \
 	fi
@@ -75,10 +77,13 @@ first-launch:
 	@echo "Build and launch services..."
 	$(MAKE) build
 	$(MAKE) up
+	@echo "Waiting for postgres to be ready before creating Superset database..."
+	$(MAKE) superset-db
 	@echo "First launch finished. Access the following services:"
-	@echo "- Jupyter : http://localhost:8888 (token: velibexplo)"
-	@echo "- Airflow : http://localhost:8081"
-	@echo "- Spark : http://localhost:8080"
+	@echo "- Jupyter  : http://localhost:8888 (token: velibexplo)"
+	@echo "- Airflow  : http://localhost:8081"
+	@echo "- Spark    : http://localhost:8080"
+	@echo "- Superset : http://localhost:8088 (user: admin / password: see SUPERSET_ADMIN_PASSWORD in .env)"
 	@echo "- PostgreSQL : localhost:5432"
 
 # Check status of containers
@@ -143,6 +148,18 @@ silver-schema:
 gold-schema:
 	docker exec -i velib_postgres psql -U velib -d velib_dw < sql/03_init_gold_schema.sql
 
+# Create the superset_meta database on postgres (idempotent — safe to re-run)
+superset-db:
+	@echo "Creating superset_meta database if not exists..."
+	-docker exec velib_postgres psql -U $(POSTGRES_USER) -c "CREATE DATABASE superset_meta;" 2>/dev/null || true
+	@echo "superset_meta database is ready."
+
+# Create the superset_meta database on postgres (idempotent — safe to re-run)
+superset-db:
+	@echo "Creating superset_meta database if not exists..."
+	-docker exec velib_postgres psql -U $(POSTGRES_USER) -c "CREATE DATABASE superset_meta;" 2>/dev/null || true
+	@echo "superset_meta database is ready."
+
 # Build image for parquet cleanup script
 cleanup-parquet-build:
 	docker build -f scripts/cleanup_parquet/Dockerfile.cleanup_parquet -t $(PARQUET_CLEANUP_IMAGE) .
@@ -203,4 +220,5 @@ help:
 	@echo "  cleanup-parquet-delete : Delete corrupted/duplicate parquet files"
 	@echo "  ingest-build           : Build docker image for manual ingest_velib script"
 	@echo "  ingest-manual          : Run ingest_velib once manually"
+	@echo "  superset-db            : Create superset_meta database on postgres (idempotent)"
 	@echo "  help        : This help"

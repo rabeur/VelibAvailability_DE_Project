@@ -238,7 +238,7 @@ def show_summary():
 with DAG(
     dag_id="velib_silver_transformation_hourly",
     default_args=default_args,
-    schedule_interval="@hourly",
+    schedule_interval=None,
     catchup=False,
     max_active_runs=1,
     tags=["velib", "bronze", "silver", "spark", "hourly"],

@@ -229,15 +229,15 @@ A concise and effective dashboard can be built in Superset with the Gold models 
 
 | Chart | Dataset | Main metric | Business value |
 |------|---------|-------------|----------------|
-| `Tension réseau sur les dernières heures` | `gold.fact_hourly_availability` | `AVG(avg_occupancy_rate)` | shows the real-time pressure on the network |
-| `Top 10 stations souvent vides` | `gold.mart_station_performance` | `AVG(avg_pct_time_empty)` | highlights the most critical stations for users looking for a bike |
-| `Heures de tension par arrondissement` | `gold.mart_peak_hours_by_district` | `AVG(avg_occupancy_rate)` | identifies when and where Paris districts are under stress |
+| `Network pressure over the last few hours` | `gold.fact_hourly_availability` | `AVG(avg_occupancy_rate)` | shows the real-time pressure on the network |
+| `Top 10 stations most often empty` | `gold.mart_station_performance` | `AVG(avg_pct_time_empty)` | highlights the most critical stations for users looking for a bike |
+| `Peak pressure hours by arrondissement` | `gold.mart_peak_hours_by_district` | `AVG(avg_occupancy_rate)` | identifies when and where Paris districts are under stress |
 
 Recommended dashboard filters:
 - `city`
 - `district_municipality_names`
 - `snapshot_day_of_week`
-- date / time range
+- `date / time range`
 - `capacity_category`
 
 ## 📚 Key Challenges Solved

@@ -2,6 +2,17 @@
 
 This project was built as part of the [Data Engineering Zoomcamp 2026][zoomcamp_website_link] by **DataTalks Club**.
 
+## ✅ Project Status
+
+The project is **completed** and delivers an end-to-end local data platform for **real-time Vélib analytics**, from API ingestion to a Superset-ready Gold layer.
+
+**Final deliverables:**
+- real-time ingestion every minute into Bronze Parquet partitions
+- hourly Bronze cleanup and Bronze → Silver transformation with Spark
+- data-quality monitoring and persisted reports
+- dbt Gold marts for analytical use cases
+- Superset-ready datasets for Paris operational dashboards, including **arrondissement-level analysis**
+
 ## 📊 Problem Definition
 
 The objective is to build a local, production-like data platform around **Vélib' open data** and transform raw station snapshots into analytics-ready datasets.
@@ -17,7 +28,7 @@ The pipeline supports spatio-temporal analysis of bike availability to identify 
 - [x] Add dbt transformation layer for Gold business models
 - [x] Add a dashboarding layer with Apache Superset
 
-## ✅ Current Progress
+## ✅ Delivery Overview
 
 ### Phase 1: Infrastructure ✅ Completed
 - [x] Docker Compose stack: PostgreSQL, Spark, Jupyter, Airflow
@@ -48,19 +59,20 @@ The pipeline supports spatio-temporal analysis of bike availability to identify 
 - [x] Airflow dbt DAG (`velib_dbt_gold_transformation`)
 - [x] dbt run/test workflow from Makefile
 
-### Phase 6: Visualization ✅ Implemented (base)
+### Phase 6: Visualization ✅ Implemented
 - [x] Apache Superset service integrated in Docker Compose
 - [x] Superset initialization flow (metadata DB + admin bootstrap)
 - [x] PostgreSQL connectivity ready for Gold dashboarding
+- [x] Paris arrondissement enrichment available for district-level dashboarding
 
-## 🆕 Recent Evolution Added to the Project
+## 🆕 Final Improvements Added to the Project
 
-- Airflow now triggers the Spark job from the scheduler container using the Docker SDK.
-- Docker socket permission handling was added via `DOCKER_GID` and `group_add` in Airflow services.
+- Airflow triggers the Spark job from the scheduler container using the Docker SDK.
 - Silver validation and summary tasks use direct PostgreSQL connections (no `docker exec` dependency).
-- Data-quality reports were moved to partitioned paths aligned with data-lake conventions.
-- Bronze hourly cleanup now removes corrupted Parquet files and minute-level duplicates before Silver transformation.
-- Code style tooling was added (`ruff`, `black`, `sqlfluff`) with Makefile targets.
+- Bronze hourly cleanup removes corrupted Parquet files and minute-level duplicates before Silver transformation.
+- Paris stations are enriched to the **20 official arrondissements** from their geographic coordinates using an official Paris GeoJSON boundary file.
+- Gold marts are ready for **Superset dashboarding** focused on real-time operational monitoring in Paris.
+- Code style tooling is available through `ruff`, `black`, and `sqlfluff` targets in the `Makefile`.
 
 ## 🏗️ Architecture
 
@@ -144,7 +156,7 @@ Main fields include:
 - `ingestion_timestamp`, `snapshot_id`
 
 ### Silver Layer (PostgreSQL)
-- `silver.stations` (station dimension)
+- `silver.stations` (station dimension, including arrondissement enrichment for Paris stations)
 - `silver.station_availability` (hourly/time-based facts)
 
 ### Gold Layer (dbt)
@@ -176,6 +188,15 @@ make first-launch
 make status
 ```
 
+### Optional backfill for Paris arrondissement labels
+
+If data was already loaded before the arrondissement enrichment was added:
+
+```bash
+python3 scripts/enrich_paris_arrondissements.py
+docker exec velib_dbt dbt run --profiles-dir /usr/app/dbt --select dim_stations mart_station_performance mart_peak_hours_by_district
+```
+
 ### Service Endpoints
 - Airflow: `http://localhost:8081`
 - Spark Master UI: `http://localhost:8080`
@@ -202,6 +223,24 @@ Each report contains:
 - Station occupancy stress zones
 - Empty/full station rate by time bucket
 - Data freshness and ingestion reliability monitoring
+- Paris analysis by arrondissement for operational monitoring
+
+## 📊 Example Superset Dashboard (Paris Focus)
+
+A concise and effective dashboard can be built in Superset with the Gold models below:
+
+| Chart | Dataset | Main metric | Business value |
+|------|---------|-------------|----------------|
+| `Tension réseau sur les dernières heures` | `gold.fact_hourly_availability` | `AVG(avg_occupancy_rate)` | shows the real-time pressure on the network |
+| `Top 10 stations souvent vides` | `gold.mart_station_performance` | `AVG(avg_pct_time_empty)` | highlights the most critical stations for users looking for a bike |
+| `Heures de tension par arrondissement` | `gold.mart_peak_hours_by_district` | `AVG(avg_occupancy_rate)` | identifies when and where Paris districts are under stress |
+
+Recommended dashboard filters:
+- `city`
+- `district_municipality_names`
+- `snapshot_day_of_week`
+- date / time range
+- `capacity_category`
 
 ## 📚 Key Challenges Solved
 
@@ -211,13 +250,15 @@ Each report contains:
 - Running Spark jobs from Airflow in Dockerized local environment
 
 
-## 🔮 Next Steps
+## Optional Extensions
 
-- [ ] Add Superset datasets/charts export (versioned dashboard-as-code)
-- [ ] Add semantic KPI dictionary (business glossary)
-- [ ] Add alerting channels (email/Slack) for pipeline + data-quality incidents
-- [ ] Add CI pipeline for `ruff` + `sqlfluff` + dbt tests
-- [ ] Prepare cloud migration path (GCP/AWS)
+The MVP is complete. If the project is extended later, possible improvements could include:
+
+- export Superset datasets / charts as code
+- add a KPI dictionary / business glossary
+- add alerting channels (email / Slack) for incidents
+- add CI for `ruff`, `sqlfluff`, and dbt tests
+- prepare a cloud migration path (GCP / AWS)
 
 ## 🌍 Local-first, Cloud-ready
 

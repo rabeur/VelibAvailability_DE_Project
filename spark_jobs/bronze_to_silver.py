@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 ============================================================================
 BRONZE TO SILVER TRANSFORMATION - Vélib Data Engineering Project
@@ -25,6 +27,7 @@ from pyspark.sql.functions import (
     greatest,
     expr,
     upper,
+    udf,
     min as spark_min,
     max as spark_max,
 )
@@ -33,12 +36,33 @@ from datetime import datetime
 import sys
 import os
 import logging
+from typing import Optional
+
+from paris_arrondissement_utils import get_paris_arrondissement_label
 
 # Logging configuration
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+@udf(returnType=StringType())
+def enrich_paris_district_name(
+    district_municipality_name: Optional[str],
+    latitude: Optional[float],
+    longitude: Optional[float],
+) -> Optional[str]:
+    """Replace the generic `Paris` label with the arrondissement derived from coordinates."""
+    if district_municipality_name is None:
+        return None
+
+    normalized_name = district_municipality_name.strip()
+    if normalized_name.lower() != "paris":
+        return normalized_name
+
+    arrondissement = get_paris_arrondissement_label(latitude=latitude, longitude=longitude)
+    return arrondissement or normalized_name
 
 
 class VelibBronzeToSilver:
@@ -297,7 +321,11 @@ class VelibBronzeToSilver:
                 col("capacity"),
                 col("latitude"),
                 col("longitude"),
-                col("district_municipality_names"),
+                enrich_paris_district_name(
+                    col("district_municipality_names"),
+                    col("latitude"),
+                    col("longitude"),
+                ).alias("district_municipality_names"),
                 col("insee_municipality_code"),
                 col("snapshot_timestamp").alias("last_seen_at"),
             )

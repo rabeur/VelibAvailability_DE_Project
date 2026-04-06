@@ -1,0 +1,11 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY scripts/ingestion/requirement_ingest.txt .
+
+RUN pip install -r requirement_ingest.txt
+
+COPY scripts/ingestion/ingest_velib.py /app/ingest_velib.py
+
+CMD ["python", "/app/ingest_velib.py"]

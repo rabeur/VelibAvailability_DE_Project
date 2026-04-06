@@ -74,22 +74,24 @@ services:
     networks:
       - velib_network
 
-  # ingestion:
-  #   build: ./ingestion
-  #   container_name: velib_ingestion
-  #   volumes:
-  #     - ./data_lake:/app/data_lake
-  #   environment:
-  #     - POSTGRES_HOST=postgres
-  #     - POSTGRES_PORT=5432
-  #     - POSTGRES_USER=${POSTGRES_USER}
-  #     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-  #     - POSTGRES_DB=${POSTGRES_DB}
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #   networks:
-  #     - velib_network
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.9.latest
+    container_name: velib_dbt
+    entrypoint: ["tail", "-f", "/dev/null"]   # keep container alive for exec_run
+    volumes:
+      - ./dbt/velib_dbt:/usr/app/dbt
+    working_dir: /usr/app/dbt
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - velib_network
 
   airflow-init:
     image: apache/airflow:2.9.0
@@ -182,10 +184,59 @@ services:
     networks:
       - velib_network
 
+  superset-init:
+    build:
+      context: .
+      dockerfile: superset/Dockerfile.superset
+    image: velib_superset_custom:latest
+    container_name: velib_superset_init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - SUPERSET_SECRET_KEY=${SUPERSET_SECRET_KEY}
+      - SUPERSET_CONFIG_PATH=/app/superset_config.py
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - SUPERSET_ADMIN_PASSWORD=${SUPERSET_ADMIN_PASSWORD}
+    volumes:
+      - superset_home:/app/superset_home
+      - ./superset/superset_config.py:/app/superset_config.py:ro
+      - ./superset/init.sh:/app/init.sh:ro
+    command: ["/bin/bash", "/app/init.sh"]
+    networks:
+      - velib_network
+    restart: on-failure
+
+  superset:
+    build:
+      context: .
+      dockerfile: superset/Dockerfile.superset
+    image: velib_superset_custom:latest
+    container_name: velib_superset
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      - SUPERSET_SECRET_KEY=${SUPERSET_SECRET_KEY}
+      - SUPERSET_CONFIG_PATH=/app/superset_config.py
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - superset_home:/app/superset_home
+      - ./superset/superset_config.py:/app/superset_config.py:ro
+    ports:
+      - "8088:8088"
+    networks:
+      - velib_network
+
 
 volumes:
   pg_data:
   pgadmin_data:
+  superset_home:
 
 
 networks:

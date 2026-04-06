@@ -1,0 +1,32 @@
+name: 'velib_dbt'
+version: '1.0.0'
+config-version: 2
+
+profile: 'velib_dbt'
+
+# Paths
+model-paths:    ["models"]
+analysis-paths: ["analyses"]
+test-paths:     ["tests"]
+seed-paths:     ["seeds"]
+macro-paths:    ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Model materializations by layer
+models:
+  velib_dbt:
+    staging:
+      +materialized: view
+      +schema: staging        # → gold_staging schema (keeps Gold clean)
+    gold:
+      +materialized: table
+      # Override incremental for large fact tables
+      fact_hourly_availability:
+        +materialized: incremental
+      fact_daily_station_stats:
+        +materialized: incremental

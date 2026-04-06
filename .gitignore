@@ -15,6 +15,20 @@ data_lake/reports/**/
 # Python
 __pycache__/
 *.pyc
+.ruff_cache/
+
+# Editor
+.vscode/
 
 # airflow
 airflow/logs/**/
+
+#dbt
+dbt/velib_dbt/target/
+dbt/velib_dbt/dbt_packages/
+dbt/velib_dbt/logs/
+dbt/velib_dbt/dbt_internal_packages/
+dbt/velib_dbt/package-lock.yml
+
+#venv
+.venv/

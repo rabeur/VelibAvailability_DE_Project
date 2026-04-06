@@ -8,6 +8,17 @@ endif
 COMPOSE_FILE = docker-compose.yml
 PROJECT_NAME = velib_project
 ENV_FILE = .env
+PYTHON = python3
+PARQUET_CLEANUP_IMAGE = velib-cleanup
+PARQUET_CLEANUP_ROOT = $(PWD)/data_lake/bronze/velib
+INGEST_IMAGE = velib-ingest
+INGEST_DATA_LAKE_ROOT = $(PWD)/data_lake
+
+.PHONY: build up up-logs down logs clean first-launch status restart shell fix-perms give-perms \
+	dbt-deps dbt-run dbt-run-staging dbt-run-gold dbt-test dbt-all dbt-docs \
+	silver-schema gold-schema superset-db cleanup-parquet-build cleanup-parquet \
+	cleanup-parquet-delete ingest-build ingest-manual format-python lint-python \
+	format-sql lint-sql help
 
 # Build docker images
 build:
@@ -51,6 +62,8 @@ first-launch:
 		echo "AIRFLOW_UID=50000" >> $(ENV_FILE); \
 		echo "AIRFLOW_GID=0" >> $(ENV_FILE); \
 		echo "DOCKER_GID=1001" >> $(ENV_FILE); \
+		echo "SUPERSET_SECRET_KEY=$$(python3 -c 'import secrets; print(secrets.token_hex(32))')" >> $(ENV_FILE); \
+		echo "SUPERSET_ADMIN_PASSWORD=admin" >> $(ENV_FILE); \
 	else \
 		echo ".env already exist."; \
 	fi
@@ -71,10 +84,13 @@ first-launch:
 	@echo "Build and launch services..."
 	$(MAKE) build
 	$(MAKE) up
+	@echo "Waiting for postgres to be ready before creating Superset database..."
+	$(MAKE) superset-db
 	@echo "First launch finished. Access the following services:"
-	@echo "- Jupyter : http://localhost:8888 (token: velibexplo)"
-	@echo "- Airflow : http://localhost:8081"
-	@echo "- Spark : http://localhost:8080"
+	@echo "- Jupyter  : http://localhost:8888 (token: velibexplo)"
+	@echo "- Airflow  : http://localhost:8081"
+	@echo "- Spark    : http://localhost:8080"
+	@echo "- Superset : http://localhost:8088 (user: admin / password: see SUPERSET_ADMIN_PASSWORD in .env)"
 	@echo "- PostgreSQL : localhost:5432"
 
 # Check status of containers
@@ -100,6 +116,98 @@ give-perms:
 	sudo chown -R ${USER}:${USER} airflow
 	sudo chown -R ${USER}:${USER} data_lake
 
+# ─── dbt / Gold layer ────────────────────────────────────────────────────────
+
+# Install dbt package dependencies (dbt-utils etc.)
+dbt-deps:
+	docker exec velib_dbt dbt deps --profiles-dir /usr/app/dbt
+
+# Run all dbt models (staging + gold)
+dbt-run:
+	docker exec velib_dbt dbt run --profiles-dir /usr/app/dbt
+
+# Run only staging views
+dbt-run-staging:
+	docker exec velib_dbt dbt run --profiles-dir /usr/app/dbt --select staging
+
+# Run only Gold models
+dbt-run-gold:
+	docker exec velib_dbt dbt run --profiles-dir /usr/app/dbt --select gold
+
+# Run dbt data-quality tests
+dbt-test:
+	docker exec velib_dbt dbt test --profiles-dir /usr/app/dbt
+
+# Full dbt pipeline: deps → run → test
+dbt-all: dbt-deps dbt-run dbt-test
+
+# Generate and serve dbt docs locally on port 8082
+dbt-docs:
+	docker exec velib_dbt dbt docs generate --profiles-dir /usr/app/dbt
+	docker exec -d -p 8082:8080 velib_dbt dbt docs serve --profiles-dir /usr/app/dbt --port 8080
+	@echo "dbt docs available at http://localhost:8082"
+
+# Create the silver schema manually (needed if the DB already existed before adding this schema)
+silver-schema:
+	docker exec -i velib_postgres psql -U velib -d velib_dw < sql/02_init_silver_schema.sql
+
+# Create the gold schema manually (needed if the DB already existed before adding this schema)
+gold-schema:
+	docker exec -i velib_postgres psql -U velib -d velib_dw < sql/03_init_gold_schema.sql
+
+# Create the superset_meta database on postgres (idempotent — safe to re-run)
+superset-db:
+	@echo "Creating superset_meta database if not exists..."
+	-docker exec velib_postgres psql -U $(POSTGRES_USER) -c "CREATE DATABASE superset_meta;" 2>/dev/null || true
+	@echo "superset_meta database is ready."
+
+# Format Python files with Ruff formatter
+format-python:
+	$(PYTHON) -m ruff format airflow scripts spark_jobs superset
+
+# Lint Python files with Ruff
+lint-python:
+	$(PYTHON) -m ruff check airflow scripts spark_jobs superset
+
+# Auto-fix and format SQL files with SQLFluff
+format-sql:
+	sqlfluff fix sql dbt/velib_dbt/models dbt/velib_dbt/macros --force
+
+# Lint SQL files with SQLFluff
+lint-sql:
+	sqlfluff lint sql dbt/velib_dbt/models dbt/velib_dbt/macros
+
+# Build image for parquet cleanup script
+cleanup-parquet-build:
+	docker build -f scripts/cleanup_parquet/Dockerfile.cleanup_parquet -t $(PARQUET_CLEANUP_IMAGE) .
+
+# Dry-run parquet cleanup (scan only)
+cleanup-parquet: cleanup-parquet-build
+	@echo "Scanning parquet files under: $(PARQUET_CLEANUP_ROOT)"
+	docker run --rm \
+		-v "$(PARQUET_CLEANUP_ROOT):/data" \
+		$(PARQUET_CLEANUP_IMAGE) --root /data
+
+# Delete corrupted + duplicate parquet files
+cleanup-parquet-delete: cleanup-parquet-build
+	@echo "Deleting corrupted/duplicate parquet files under: $(PARQUET_CLEANUP_ROOT)"
+	docker run --rm \
+		-v "$(PARQUET_CLEANUP_ROOT):/data" \
+		$(PARQUET_CLEANUP_IMAGE) --root /data --delete
+
+# Build image for manual ingestion script
+ingest-build:
+	docker build -f scripts/ingestion/Dockerfile.ingest_velib -t $(INGEST_IMAGE) .
+
+# Run ingestion once manually
+ingest-manual: ingest-build
+	@echo "Running manual ingestion and writing outputs under: $(INGEST_DATA_LAKE_ROOT)"
+	docker run --rm \
+		-v "$(INGEST_DATA_LAKE_ROOT):/app/data_lake" \
+		$(INGEST_IMAGE)
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 # help
 help:
 	@echo "Available targets:"
@@ -115,4 +223,23 @@ help:
 	@echo "  shell       : Access a container (make shell SERVICE=<name>)"
 	@echo "  fix-perms   : Give required permission to airflow and datalake folder in order to make docker-compose work (required in prod)"
 	@echo "  give-perms  : Give permission to modify airflow and datalake folder  (usefull in devmode but useless in prod)"
+	@echo "  dbt-deps    : Install dbt package dependencies"
+	@echo "  dbt-run     : Run all dbt models (staging + gold)"
+	@echo "  dbt-run-staging : Run only staging views"
+	@echo "  dbt-run-gold    : Run only Gold models"
+	@echo "  dbt-test    : Run dbt data-quality tests"
+	@echo "  dbt-all     : Full dbt pipeline (deps → run → test)"
+	@echo "  dbt-docs    : Generate and serve dbt docs on port 8082"
+	@echo "  silver-schema : Create silver schema manually (if DB already existed)"
+	@echo "  gold-schema : Create gold schema manually (if DB already existed)"
+	@echo "  cleanup-parquet-build  : Build docker image for parquet cleanup script"
+	@echo "  cleanup-parquet        : Dry-run scan of corrupted/duplicate parquet files"
+	@echo "  cleanup-parquet-delete : Delete corrupted/duplicate parquet files"
+	@echo "  ingest-build           : Build docker image for manual ingest_velib script"
+	@echo "  ingest-manual          : Run ingest_velib once manually"
+	@echo "  superset-db            : Create superset_meta database on postgres (idempotent)"
+	@echo "  format-python          : Format Python code with Ruff"
+	@echo "  lint-python            : Lint Python code with Ruff"
+	@echo "  format-sql             : Auto-fix SQL style with SQLFluff"
+	@echo "  lint-sql               : Lint SQL style with SQLFluff"
 	@echo "  help        : This help"

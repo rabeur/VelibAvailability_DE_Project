@@ -1,14 +1,15 @@
 import requests
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import datetime
 import os
 import sys
 import pytz
 
 JSON_EXPORT_URL = "https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/velib-disponibilite-en-temps-reel/exports/json"
 
+
 def ingest():
-    paris_tz = pytz.timezone('Europe/Paris')
+    paris_tz = pytz.timezone("Europe/Paris")
     now = datetime.now(paris_tz)
     date = now.strftime("%Y-%m-%d")
     hour = now.strftime("%H")
@@ -22,7 +23,7 @@ def ingest():
 
         # Extract the results list - handle if data is dict or list
         if isinstance(data, dict):
-            stations = data.get('results', [])
+            stations = data.get("results", [])
         elif isinstance(data, list):
             stations = data
         else:
@@ -32,10 +33,14 @@ def ingest():
         dataframe = pd.DataFrame(stations)
 
         # Flatten geographical coordinates
-        if 'coordonnees_geo' in dataframe.columns:
-            dataframe['lon'] = dataframe['coordonnees_geo'].apply(lambda x: x.get('lon') if isinstance(x, dict) else None)
-            dataframe['lat'] = dataframe['coordonnees_geo'].apply(lambda x: x.get('lat') if isinstance(x, dict) else None)
-            dataframe.drop(columns=['coordonnees_geo'], inplace=True)
+        if "coordonnees_geo" in dataframe.columns:
+            dataframe["lon"] = dataframe["coordonnees_geo"].apply(
+                lambda x: x.get("lon") if isinstance(x, dict) else None
+            )
+            dataframe["lat"] = dataframe["coordonnees_geo"].apply(
+                lambda x: x.get("lat") if isinstance(x, dict) else None
+            )
+            dataframe.drop(columns=["coordonnees_geo"], inplace=True)
 
         # Add ingestion metadata
         dataframe["ingestion_timestamp"] = now.isoformat()
@@ -43,24 +48,24 @@ def ingest():
 
         # Define and enforce data types for stability
         dtype_mapping = {
-            'stationcode': 'string',
-            'name': 'string',
-            'is_installed': 'string',
-            'capacity': 'Int64',  # Nullable integer
-            'numdocksavailable': 'Int64',
-            'numbikesavailable': 'Int64',
-            'mechanical': 'Int64',
-            'ebike': 'Int64',
-            'is_renting': 'string',
-            'is_returning': 'string',
-            'duedate': 'string',  # Keep as string for now, could convert to datetime if needed
-            'nom_arrondissement_communes': 'string',
-            'code_insee_commune': 'string',
-            'lon': 'float64',
-            'lat': 'float64',
-            'station_opening_hours': 'string',
-            'ingestion_timestamp': 'string',
-            'snapshot_id': 'string'
+            "stationcode": "string",
+            "name": "string",
+            "is_installed": "string",
+            "capacity": "Int64",  # Nullable integer
+            "numdocksavailable": "Int64",
+            "numbikesavailable": "Int64",
+            "mechanical": "Int64",
+            "ebike": "Int64",
+            "is_renting": "string",
+            "is_returning": "string",
+            "duedate": "string",  # Keep as string for now, could convert to datetime if needed
+            "nom_arrondissement_communes": "string",
+            "code_insee_commune": "string",
+            "lon": "float64",
+            "lat": "float64",
+            "station_opening_hours": "string",
+            "ingestion_timestamp": "string",
+            "snapshot_id": "string",
         }
 
         # Apply dtypes, ignoring any missing columns
@@ -83,8 +88,10 @@ def ingest():
     except Exception as e:
         print(f"❌ Unexpected error: {type(e).__name__}: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     ingest()

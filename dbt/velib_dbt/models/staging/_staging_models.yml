@@ -1,0 +1,29 @@
+version: 2
+
+models:
+
+  - name: stg_stations
+    description: >
+      Staging view on silver.stations.
+      Filters to active stations with a valid capacity.
+    columns:
+      - name: station_id
+        tests:
+          - not_null
+          - unique
+      - name: capacity
+        tests:
+          - not_null
+
+  - name: stg_station_availability
+    description: >
+      Staging view on silver.station_availability.
+      Keeps only snapshots from installed stations;
+      passes all Silver columns through unchanged.
+    columns:
+      - name: station_id
+        tests:
+          - not_null
+      - name: snapshot_timestamp
+        tests:
+          - not_null

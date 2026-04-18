@@ -91,8 +91,8 @@
       "Bash(git reset --hard:*)",
       "Bash(docker system prune:*)",
       "Bash(docker volume rm:*)",
-      "Bash(curl:* | sh)",
-      "Bash(wget:* | sh)"
+      "Bash(curl:*)",
+      "Bash(wget:*)"
     ],
     "ask": [
       "Bash(terraform apply:*)",

@@ -1,0 +1,113 @@
+# .claudeignore
+# Exclut fichiers sensibles du contexte Claude Code.
+# Complémentaire à .gitignore : certains fichiers ignorés par git
+# doivent quand même rester invisibles à Claude (ex. .env non committé).
+
+# ==========================================
+# Secrets et credentials (critique)
+# ==========================================
+.env
+.env.cloud
+.env.local
+.env.*.local
+.env.production
+
+# Clés de service account GCP
+*service-account*.json
+*credentials*.json
+*-sa.json
+velib-pipeline-sa*.json
+gcp-key*.json
+
+# Clés SSH et certificats
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
+# ==========================================
+# Terraform state (contient secrets en clair)
+# ==========================================
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfstate.*.backup
+.terraform/
+.terraform.lock.hcl
+crash.log
+crash.*.log
+
+# Variables Terraform avec vraies valeurs
+terraform.tfvars
+*.auto.tfvars
+# (terraform.tfvars.example reste visible, pas de secrets dedans)
+
+# ==========================================
+# Caches et artefacts de build
+# ==========================================
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# dbt artefacts
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+.user.yml
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log
+
+# ==========================================
+# Data lake et volumes (trop gros, pas utile)
+# ==========================================
+data_lake/bronze/
+data_lake/silver/
+data_lake/reports/
+*.parquet
+*.arrow
+
+# Volumes Docker persistants
+postgres_data/
+superset_data/
+airflow_logs/
+
+# ==========================================
+# Logs locaux et fichiers temporaires
+# ==========================================
+*.log
+logs/
+tmp/
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# IDE (non nécessaire pour Claude)
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ==========================================
+# Node (si outillage front ajouté plus tard)
+# ==========================================
+node_modules/
+
+# ==========================================
+# Environnements Python virtuels
+# ==========================================
+venv/
+.venv/
+env/
+ENV/

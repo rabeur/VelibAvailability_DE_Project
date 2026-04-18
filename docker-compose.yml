@@ -52,28 +52,6 @@ services:
     networks:
       - velib_network
 
-  jupyter:
-    image: jupyter/pyspark-notebook:latest
-    container_name: velib_jupyter
-    user: root
-    ports:
-      - "8888:8888"
-    volumes:
-      - ./notebooks:/home/jovyan/work
-      - ./data_lake:/home/jovyan/data_lake
-    environment:
-      - JUPYTER_ENABLE_LAB=yes
-      - JUPYTER_TOKEN=${JUPYTER_TOKEN}
-      - GRANT_SUDO=yes
-      - CHOWN_HOME=yes
-    depends_on:
-      postgres:
-        condition: service_healthy
-      spark:
-        condition: service_started
-    networks:
-      - velib_network
-
   dbt:
     image: ghcr.io/dbt-labs/dbt-postgres:1.9.latest
     container_name: velib_dbt

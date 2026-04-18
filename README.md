@@ -31,7 +31,7 @@ The pipeline supports spatio-temporal analysis of bike availability to identify 
 ## ✅ Delivery Overview
 
 ### Phase 1: Infrastructure ✅ Completed
-- [x] Docker Compose stack: PostgreSQL, Spark, Jupyter, Airflow
+- [x] Docker Compose stack: PostgreSQL, Spark, Airflow
 - [x] Local-first environment with reproducible setup via Makefile
 - [x] SQL initialization for Silver and Gold schemas
 - [x] Superset service with dedicated metadata database (`superset_meta`)
@@ -88,7 +88,6 @@ The pipeline supports spatio-temporal analysis of bike availability to identify 
 | Processing | **Apache Spark 3.5** | Bronze-to-Silver transformations and enrichment |
 | Data Warehouse | **PostgreSQL 17** | Silver analytical storage |
 | Data Lake | **Local filesystem + Parquet** | Raw snapshot storage with partitioning |
-| Interactive Analysis | **Jupyter PySpark Notebook** | Exploration and profiling |
 | Infrastructure | **Docker + Docker Compose** | Reproducible local deployment |
 | Transformation | **dbt** | Gold models, tests, and lineage |
 | Visualization | **Apache Superset** | BI dashboards on PostgreSQL Gold models |
@@ -200,7 +199,6 @@ docker exec velib_dbt dbt run --profiles-dir /usr/app/dbt --select dim_stations 
 ### Service Endpoints
 - Airflow: `http://localhost:8081`
 - Spark Master UI: `http://localhost:8080`
-- Jupyter: `http://localhost:8888`
 - Superset: `http://localhost:8088`
 - PostgreSQL: `localhost:5432`
 - pgAdmin: `http://localhost:5050`

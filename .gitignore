@@ -6,9 +6,6 @@ data_lake/reports/**/
 # DB
 .pgdata/
 
-# Jupyter
-.ipynb_checkpoints
-
 # Env
 .env
 

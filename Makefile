@@ -55,7 +55,6 @@ first-launch:
 		echo "POSTGRES_DB=velib_dw" >> $(ENV_FILE); \
 		echo "PGADMIN_PASSWORD=admin" >> $(ENV_FILE); \
 		echo "PGADMIN_EMAIL=admin@velib.com" >> $(ENV_FILE); \
-		echo "JUPYTER_TOKEN=velibexplo" >> $(ENV_FILE); \
 		echo "AIRFLOW_ADMIN_USERNAME=admin" >> $(ENV_FILE); \
 		echo "AIRFLOW_ADMIN_PASSWORD=admin" >> $(ENV_FILE); \
 		echo "AIRFLOW_FERNET_KEY=$$(python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")" >> $(ENV_FILE); \
@@ -87,7 +86,6 @@ first-launch:
 	@echo "Waiting for postgres to be ready before creating Superset database..."
 	$(MAKE) superset-db
 	@echo "First launch finished. Access the following services:"
-	@echo "- Jupyter  : http://localhost:8888 (token: velibexplo)"
 	@echo "- Airflow  : http://localhost:8081"
 	@echo "- Spark    : http://localhost:8080"
 	@echo "- Superset : http://localhost:8088 (user: admin / password: see SUPERSET_ADMIN_PASSWORD in .env)"

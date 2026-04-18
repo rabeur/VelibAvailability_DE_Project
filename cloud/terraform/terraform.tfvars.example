@@ -1,0 +1,12 @@
+project_id         = "velib-analytics-xxxxx"
+region             = "europe-west1"
+environment        = "dev"
+bronze_bucket_name = "velib-bronze-velib-analytics-xxxxx"
+silver_dataset_id  = "velib_silver"
+gold_dataset_id    = "velib_gold"
+service_account_id = "velib-pipeline-sa"
+
+labels = {
+  project    = "velib"
+  managed_by = "terraform"
+}

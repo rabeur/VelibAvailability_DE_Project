@@ -1,114 +1,151 @@
-# 🚴 Vélib' Data Pipeline - Paris Bicycle Sharing Analytics
+# 🚴 Vélib' Data Platform
 
-This project was built as part of the [Data Engineering Zoomcamp 2026][zoomcamp_website_link] by **DataTalks Club**.
+**End-to-end data engineering pipeline for Paris' bike sharing network — from real-time API ingestion to analytics-ready dashboards.**
 
-## ✅ Project Status
+[![Airflow](https://img.shields.io/badge/orchestration-Airflow-017CEE?logo=apacheairflow&logoColor=white)](https://airflow.apache.org/)
+[![Spark](https://img.shields.io/badge/processing-Spark-E25A1C?logo=apachespark&logoColor=white)](https://spark.apache.org/)
+[![dbt](https://img.shields.io/badge/transform-dbt-FF694B?logo=dbt&logoColor=white)](https://www.getdbt.com/)
+[![PostgreSQL](https://img.shields.io/badge/warehouse-PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Superset](https://img.shields.io/badge/bi-Superset-20A6C9?logo=apachesuperset&logoColor=white)](https://superset.apache.org/)
+[![Docker](https://img.shields.io/badge/infra-Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 
-The project is **completed** and delivers an end-to-end local data platform for **real-time Vélib analytics**, from API ingestion to a Superset-ready Gold layer.
+---
 
-**Final deliverables:**
-- real-time ingestion every minute into Bronze Parquet partitions
-- hourly Bronze cleanup and Bronze → Silver transformation with Spark
-- data-quality monitoring and persisted reports
-- dbt Gold marts for analytical use cases
-- Superset-ready datasets for Paris operational dashboards, including **arrondissement-level analysis**
+## Overview
 
-## 📊 Problem Definition
+A production-grade, local-first data platform that ingests real-time Vélib' open data every minute, lands it in a partitioned data lake, transforms it through Bronze → Silver → Gold layers with Spark and dbt, runs automated quality checks, and serves analytical models for operational dashboarding in Superset.
 
-The objective is to build a local, production-like data platform around **Vélib' open data** and transform raw station snapshots into analytics-ready datasets.
+The project was built as the capstone of the [Data Engineering Zoomcamp 2026](https://github.com/DataTalksClub/data-engineering-zoomcamp) by DataTalks Club.
 
-The pipeline supports spatio-temporal analysis of bike availability to identify areas under pressure and prepare data for forecasting models.
+> **Capability snapshot:** [N] Vélib' stations tracked · [N]k snapshots ingested per day · [N] dbt models · [N] GB data lake · hourly Bronze → Silver → Gold refresh
 
-## 🎯 Main Objectives
+---
 
-- [x] Ingest real-time Vélib data every minute
-- [x] Store raw snapshots in a Bronze data lake (Parquet, partitioned)
-- [x] Transform Bronze data into a Silver warehouse model (Spark + PostgreSQL)
-- [x] Run automated data quality checks and persist reports
-- [x] Add dbt transformation layer for Gold business models
-- [x] Add a dashboarding layer with Apache Superset
+## Screenshots
 
-## ✅ Delivery Overview
+> *Placeholder — dashboards, DAGs and lineage screenshots to be added.*
 
-### Phase 1: Infrastructure ✅ Completed
-- [x] Docker Compose stack: PostgreSQL, Spark, Airflow
-- [x] Local-first environment with reproducible setup via Makefile
-- [x] SQL initialization for Silver and Gold schemas
-- [x] Superset service with dedicated metadata database (`superset_meta`)
+| | |
+|---|---|
+| **Airflow DAGs** | ![Airflow DAGs placeholder](docs/screenshots/airflow-dags.png) |
+| **dbt lineage** | ![dbt lineage placeholder](docs/screenshots/dbt-lineage.png) |
+| **Superset dashboard** | ![Superset dashboard placeholder](docs/screenshots/superset-dashboard.png) |
 
-### Phase 2: Ingestion ✅ Completed
-- [x] Airflow ingestion DAG running every minute
-- [x] Stable Bronze schema with typed columns
-- [x] Geo flattening (`coordonnees_geo` → `lat`/`lon`)
-- [x] Partitioned writes: `data_lake/bronze/velib/ingestion_date=YYYY-MM-DD/hour=HH/`
+---
 
-### Phase 3: Data Quality ✅ Implemented
-- [x] Dedicated Airflow data-quality DAG (runs every minute)
-- [x] Quality checks: schema, nulls, duplicates, freshness, ranges, consistency
-- [x] Partitioned text reports in `data_lake/reports/data_quality/report_date=YYYY-MM-DD/hour=HH/`
-
-### Phase 4: Bronze → Silver ✅ Implemented (core)
-- [x] Hourly Airflow Bronze cleanup DAG (corrupted + duplicate parquet handling)
-- [x] Trigger-based Bronze-to-Silver DAG execution after cleanup
-- [x] Spark transformation job with data cleaning, normalization, and metrics
-- [x] PostgreSQL Silver loading and validation
-- [x] Runtime summary task with station/snapshot monitoring
-
-### Phase 5: Gold Analytics ✅ Implemented
-- [x] dbt Gold models (dimensions, facts, marts)
-- [x] Airflow dbt DAG (`velib_dbt_gold_transformation`)
-- [x] dbt run/test workflow from Makefile
-
-### Phase 6: Visualization ✅ Implemented
-- [x] Apache Superset service integrated in Docker Compose
-- [x] Superset initialization flow (metadata DB + admin bootstrap)
-- [x] PostgreSQL connectivity ready for Gold dashboarding
-- [x] Paris arrondissement enrichment available for district-level dashboarding
-
-## 🆕 Final Improvements Added to the Project
-
-- Airflow triggers the Spark job from the scheduler container using the Docker SDK.
-- Silver validation and summary tasks use direct PostgreSQL connections (no `docker exec` dependency).
-- Bronze hourly cleanup removes corrupted Parquet files and minute-level duplicates before Silver transformation.
-- Paris stations are enriched to the **20 official arrondissements** from their geographic coordinates using an official Paris GeoJSON boundary file.
-- Gold marts are ready for **Superset dashboarding** focused on real-time operational monitoring in Paris.
-- Code style tooling is available through `ruff`, `black`, and `sqlfluff` targets in the `Makefile`.
-
-## 🏗️ Architecture
+## Architecture
 
 ![Architecture Diagram](docs/diagrams/architecture_diagram.png)
-(Architecture diagram created with [Lucidchart][lucidchart_website_link].)
 
-## 🛠️ Tech Stack
+The pipeline follows the medallion architecture pattern with clear separation of concerns:
 
-| Component | Technology | Role |
-|-----------|------------|------|
-| Orchestration | **Apache Airflow 2.9** | Scheduling, dependency management, and pipeline monitoring |
-| Ingestion | **Python (requests + pandas)** | Real-time API extraction, schema stabilization, Bronze writes |
-| Processing | **Apache Spark 3.5** | Bronze-to-Silver transformations and enrichment |
-| Data Warehouse | **PostgreSQL 17** | Silver analytical storage |
-| Data Lake | **Local filesystem + Parquet** | Raw snapshot storage with partitioning |
-| Infrastructure | **Docker + Docker Compose** | Reproducible local deployment |
-| Transformation | **dbt** | Gold models, tests, and lineage |
-| Visualization | **Apache Superset** | BI dashboards on PostgreSQL Gold models |
+**Bronze layer** captures raw API snapshots as partitioned Parquet files on local disk, with stable schema and geo flattening applied at ingestion time. Partitioning by `ingestion_date` and `hour` keeps downstream reads fast and enables incremental processing.
 
-## 🧭 Development Methodology
+**Silver layer** is materialized in PostgreSQL after a Spark job reads the previous hour's Bronze partition, applies data cleaning and normalization, computes operational metrics (occupancy rate, availability rate, service rate), and enriches Paris stations with their administrative district using official GeoJSON boundaries.
 
-To keep all components consistent (Airflow DAGs, scripts, Spark jobs, dbt SQL), the project uses one shared set of conventions:
+**Gold layer** is built with dbt on top of Silver. It exposes dimensional models, hourly and daily facts, and business-oriented marts designed to power Superset dashboards focused on real-time operational monitoring.
 
-- Python style: `ruff` + `black` settings from [pyproject.toml](pyproject.toml)
-- SQL style: `sqlfluff` settings from [.sqlfluff](.sqlfluff)
-- Naming:
-  - snake_case for Python variables/functions
-  - explicit task names in DAGs (`load_data`, `quality_checks`, etc.)
-  - dbt layer naming kept as `stg_`, `dim_`, `fact_`, `mart_`
-- Comments:
-  - explain why (decision, constraint, edge case), not obvious line-by-line actions
-  - keep comments concise and in English across pipeline code
+---
 
-### Quality Commands
+## Tech stack
 
-Use these targets before merging changes:
+| Layer | Tool | Role |
+|---|---|---|
+| Orchestration | Apache Airflow | Scheduling, dependency management, trigger-based DAG chaining |
+| Ingestion | Python, Requests, Pandas | Real-time API extraction, schema stabilization, Bronze writes |
+| Processing | Apache Spark | Distributed Bronze to Silver transformations and enrichment |
+| Warehouse | PostgreSQL | Silver analytical storage |
+| Transformation | dbt | Gold models, testing, lineage documentation |
+| Data lake | Local filesystem, Parquet | Raw snapshot storage with date and hour partitioning |
+| Infrastructure | Docker, Docker Compose | Reproducible local deployment |
+| Visualization | Apache Superset | BI dashboards on Gold models |
+| Code quality | ruff, black, sqlfluff | Consistent style across Python and SQL |
+
+---
+
+## Pipeline components
+
+The platform runs five Airflow DAGs, each with a single, well-defined responsibility.
+
+| DAG | Frequency | Purpose |
+|---|---|---|
+| `velib_ingestion_pipeline` | every minute | API extraction, schema enforcement, Bronze write, basic validation |
+| `velib_data_quality` | every minute | Schema, null, duplicate, freshness, range and consistency checks with persisted reports |
+| `velib_bronze_cleanup_hourly` | hourly | Removes corrupted Parquet files and minute-level duplicates from the previous hour partition |
+| `velib_silver_transformation_hourly` | trigger-based | Executes the Spark job, loads Silver tables, validates the output |
+| `velib_dbt_gold_transformation` | daily at 03:00 | Runs dbt deps, staging, gold and tests |
+
+The Spark job itself (`spark_jobs/bronze_to_silver.py`) handles field cleaning, normalization, the three operational metrics and the loading of both the station dimension and the availability facts into PostgreSQL.
+
+---
+
+## Data model
+
+### Bronze — Parquet partitions
+
+Partitioned by `ingestion_date` and `hour`, with stable schema across snapshots. Key fields include station identity (`stationcode`, `name`, `capacity`), real-time availability (`numdocksavailable`, `numbikesavailable`, `mechanical`, `ebike`), operational status (`is_installed`, `is_renting`, `is_returning`), geography (`lat`, `lon`, `nom_arrondissement_communes`) and lineage markers (`ingestion_timestamp`, `snapshot_id`).
+
+### Silver — PostgreSQL
+
+- `silver.stations` — station dimension with Paris district enrichment
+- `silver.station_availability` — time-based availability facts
+
+### Gold — dbt models
+
+- `gold.dim_stations`
+- `gold.fact_hourly_availability`
+- `gold.fact_daily_station_stats`
+- `gold.mart_station_performance`
+- `gold.mart_peak_hours_by_district`
+
+---
+
+## Notable engineering decisions
+
+**Historical snapshots from a real-time API.** The Vélib' API only exposes the current state of the network. Building historical analytics required designing a reliable minute-level ingestion loop, a stable Bronze schema that survives upstream API changes, and a lineage marker (`snapshot_id`, `ingestion_timestamp`) on every row to support deduplication and replay.
+
+**Schema stability across rapid Parquet writes.** Writing Parquet every minute under schema drift is a known failure mode. The ingestion DAG enforces a typed column contract and flattens the nested `coordonnees_geo` field at write time, so downstream Spark and dbt reads never hit mixed schemas.
+
+**Trigger-based DAG orchestration instead of time-based coupling.** The Silver transformation is not scheduled directly — it is triggered only after the Bronze cleanup confirms the previous hour's partition is clean. This eliminates a whole class of race conditions between writers and readers.
+
+**Running Spark from Airflow inside Docker.** The Airflow scheduler uses the Docker SDK to spawn the Spark job container, avoiding the brittleness of `docker exec` from inside a DAG. Silver validation and summary tasks hit PostgreSQL directly through standard connections.
+
+**District-level enrichment for operational analytics.** Paris stations are mapped to their official arrondissement by joining their coordinates against the municipal GeoJSON boundary file. This turns geographic coordinates into a business-meaningful dimension that powers the `mart_peak_hours_by_district` analytics.
+
+**Data quality as a first-class citizen.** Quality is not a post-hoc check but a dedicated DAG running at ingestion frequency, with partitioned text reports stored in `data_lake/reports/data_quality/`. Every report records rows checked, tests passed and failed, and a per-check PASS or FAIL message.
+
+---
+
+## Getting started
+
+### Prerequisites
+
+- Docker Desktop or Docker Engine
+- A Linux or WSL terminal
+- `make`
+- `python3` (recommended for the local linting and formatting tooling)
+
+### Bootstrap
+
+```bash
+git clone https://github.com/rabeur/VelibAvailability_DE_Project.git
+cd VelibAvailability_DE_Project
+
+make first-launch      # build, up, init database, init Superset
+make status            # check service health
+```
+
+### Service endpoints
+
+| Service | URL |
+|---|---|
+| Airflow | http://localhost:8081 |
+| Spark Master UI | http://localhost:8080 |
+| Superset | http://localhost:8088 |
+| pgAdmin | http://localhost:5050 |
+| PostgreSQL | localhost:5432 |
+
+### Code quality
 
 ```bash
 make format-python
@@ -117,154 +154,71 @@ make format-sql
 make lint-sql
 ```
 
-## 📁 Pipeline Components
+---
 
-### Airflow DAGs
-- `velib_ingestion_pipeline` (every minute)
-  - API extraction, schema enforcement, Bronze write, basic validation
-- `velib_data_quality` (every minute)
-  - Snapshot quality checks and partitioned report generation
-- `velib_bronze_cleanup_hourly` (hourly)
-  - Checks previous-hour Bronze partition
-  - Removes corrupted parquet and minute-level duplicates
-  - Triggers Silver transformation DAG
-- `velib_silver_transformation_hourly` (trigger-based)
-  - Bronze availability check, Spark execution, Silver validation, summary
-- `velib_dbt_gold_transformation` (daily 03:00)
-  - dbt deps → staging → gold → tests
+## Example analyses enabled
 
-### Spark Job
-- `spark_jobs/bronze_to_silver.py`
-  - Cleans and normalizes fields
-  - Computes operational metrics (`occupancy_rate`, `availability_rate`, `service_rate`)
-  - Loads stations and availability into Silver tables
-
-## 📦 Data Model
-
-### Bronze Layer (Parquet)
-Partitioned snapshots:
-- `ingestion_date`
-- `hour`
-
-Main fields include:
-- `stationcode`, `name`, `capacity`
-- `numdocksavailable`, `numbikesavailable`, `mechanical`, `ebike`
-- `is_installed`, `is_renting`, `is_returning`
-- `lat`, `lon`
-- `nom_arrondissement_communes`, `code_insee_commune`
-- `ingestion_timestamp`, `snapshot_id`
-
-### Silver Layer (PostgreSQL)
-- `silver.stations` (station dimension, including arrondissement enrichment for Paris stations)
-- `silver.station_availability` (hourly/time-based facts)
-
-### Gold Layer (dbt)
-- `gold.dim_stations`
-- `gold.fact_hourly_availability`
-- `gold.fact_daily_station_stats`
-- `gold.mart_station_performance`
-- `gold.mart_peak_hours_by_district`
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Docker Desktop or Docker Engine
-- Linux/WSL terminal
-- `make`
-- `python3` (recommended for local lint/format tooling)
-
-### Installation
-
-```bash
-# 1) Clone project
-git clone https://github.com/rabeur/VelibAvailability_DE_Project.git
-cd VelibAvailability_DE_Project
-
-# 2) Bootstrap env + build + up
-make first-launch
-
-# 3) (Optional) check service status
-make status
-```
-
-### Optional backfill for Paris arrondissement labels
-
-If data was already loaded before the arrondissement enrichment was added:
-
-```bash
-python3 scripts/enrich_paris_arrondissements.py
-docker exec velib_dbt dbt run --profiles-dir /usr/app/dbt --select dim_stations mart_station_performance mart_peak_hours_by_district
-```
-
-### Service Endpoints
-- Airflow: `http://localhost:8081`
-- Spark Master UI: `http://localhost:8080`
-- Superset: `http://localhost:8088`
-- PostgreSQL: `localhost:5432`
-- pgAdmin: `http://localhost:5050`
-
-## 🧪 Data Quality Reports
-
-Reports are generated as text files in:
-
-`data_lake/reports/data_quality/report_date=YYYY-MM-DD/hour=HH/report-YYYY-MM-DD-HH-mm.txt`
-
-Each report contains:
-- rows checked
-- tests passed / failed
-- success rate
-- detailed PASS/FAIL messages per check
-
-## 🔍 Example Analyses Enabled
-
-- Bike availability trend by hour/day
+- Bike availability trends by hour and day
 - Station occupancy stress zones
-- Empty/full station rate by time bucket
+- Empty and full station rates by time bucket
 - Data freshness and ingestion reliability monitoring
-- Paris analysis by arrondissement for operational monitoring
+- Paris operational analysis by arrondissement
 
-## 📊 Example Superset Dashboard (Paris Focus)
+### Superset dashboard example
 
-A concise and effective dashboard can be built in Superset with the Gold models below:
+| Chart | Dataset | Metric | Business value |
+|---|---|---|---|
+| Network pressure over the last few hours | `gold.fact_hourly_availability` | `AVG(avg_occupancy_rate)` | Real-time pressure on the network |
+| Top 10 stations most often empty | `gold.mart_station_performance` | `AVG(avg_pct_time_empty)` | Highlights the most critical stations for riders |
+| Peak pressure hours by arrondissement | `gold.mart_peak_hours_by_district` | `AVG(avg_occupancy_rate)` | Identifies when and where districts are under stress |
 
-| Chart | Dataset | Main metric | Business value |
-|------|---------|-------------|----------------|
-| `Tension réseau sur les dernières heures` | `gold.fact_hourly_availability` | `AVG(avg_occupancy_rate)` | shows the real-time pressure on the network |
-| `Top 10 stations souvent vides` | `gold.mart_station_performance` | `AVG(avg_pct_time_empty)` | highlights the most critical stations for users looking for a bike |
-| `Heures de tension par arrondissement` | `gold.mart_peak_hours_by_district` | `AVG(avg_occupancy_rate)` | identifies when and where Paris districts are under stress |
+---
 
-Recommended dashboard filters:
-- `city`
-- `district_municipality_names`
-- `snapshot_day_of_week`
-- date / time range
-- `capacity_category`
+## Roadmap
 
-## 📚 Key Challenges Solved
+The local platform is complete and operational. The following extensions are actively planned.
 
-- Building historical snapshots from real-time API data
-- Stabilizing schema across rapidly ingested Parquet files
-- Enforcing data quality gates before downstream analytics
-- Running Spark jobs from Airflow in Dockerized local environment
+### In progress — Cloud deployment on Google Cloud Platform
 
+A parallel cloud branch is being built to demonstrate portability and cloud-readiness, while preserving the local platform intact. The hybrid design keeps Airflow local to avoid the fixed cost of a managed scheduler and delegates storage, processing and warehousing to managed GCP services.
 
-## Optional Extensions
+| Component | Local | GCP target |
+|---|---|---|
+| Data lake | Filesystem, Parquet | Google Cloud Storage |
+| Processing | Spark on Docker | Dataproc Serverless |
+| Warehouse | PostgreSQL | BigQuery |
+| Transform | dbt-postgres | dbt-bigquery |
+| Viz | Superset | Looker Studio |
+| IaC | Docker Compose | Terraform |
 
-The MVP is complete. If the project is extended later, possible improvements could include:
+### Planned
 
-- export Superset datasets / charts as code
-- add a KPI dictionary / business glossary
-- add alerting channels (email / Slack) for incidents
-- add CI for `ruff`, `sqlfluff`, and dbt tests
-- prepare a cloud migration path (GCP / AWS)
+- CI pipeline for `ruff`, `sqlfluff` and dbt tests
+- Alerting channels (email and Slack) for pipeline incidents
+- KPI dictionary and business glossary
+- Export of Superset datasets and charts as code
 
-## 🌍 Local-first, Cloud-ready
+---
 
-- Local filesystem ↔ object storage (S3/GCS/ADLS)
-- PostgreSQL ↔ analytical warehouse (BigQuery/Snowflake)
-- Spark local ↔ scalable distributed processing
-- Airflow local ↔ managed orchestration services
+## Repository structure
 
-[zoomcamp_website_link]: https://github.com/DataTalksClub/data-engineering-zoomcamp
-[lucidchart_website_link]: https://www.lucidchart.com/pages
-[docker_desktop]: https://www.docker.com/products/docker-desktop
+```
+VelibAvailability_DE_Project/
+├── airflow/dags/              # Airflow DAGs (ingestion, quality, cleanup, Silver, Gold)
+├── spark_jobs/                # Spark transformation jobs
+├── dbt/                       # dbt project (staging, gold, tests)
+├── data_lake/                 # Bronze Parquet partitions and quality reports
+├── scripts/                   # Utility scripts (arrondissement enrichment, bootstrap)
+├── docker-compose.yml
+├── Makefile
+└── README.md
+```
+
+---
+
+## About
+
+Built by **Adrien Rabier**, Data Engineer based in Paris.
+4 years in software engineering on mission-critical industrial systems (RATP, SNCF, energy), specialized in SQL, data modeling, batch migrations and Python automation.
+
+[LinkedIn](https://www.linkedin.com/in/adrien-rabier-9a699a150/) · [GitHub](https://github.com/rabeur) · rabiera69@gmail.com

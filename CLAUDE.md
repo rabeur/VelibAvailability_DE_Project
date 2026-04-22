@@ -103,7 +103,7 @@ impacts coûts). Pas de tirets cadratins dans les livrables publiés
 
 Lire ces fichiers pour le contexte technique complet :
 - `README.md` : vue d'ensemble du pipeline local
-- `cloud/docs/architecture_cible.md` : spec détaillée de la migration GCP (chargée automatiquement dans cloud/)
+- `cloud/docs/architecture_target.md` : spec détaillée de la migration GCP (chargée automatiquement dans cloud/)
 - `docs/diagrams/architecture_diagram.png` : diagramme local
 - `cloud/docs/architecture.md` : diagramme cloud (à créer)
 
@@ -153,5 +153,5 @@ variables, scripts).
 ## État d'avancement
 
 Voir le dernier commit et les issues GitHub ouvertes pour le suivi.
-Les phases prévues sont décrites dans `cloud/docs/architecture_cible.md`
+Les phases prévues sont décrites dans `cloud/docs/architecture_target.md`
 section "Critères de fin de chantier".

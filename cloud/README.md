@@ -1,52 +1,52 @@
-# Cloud — Migration GCP du pipeline Vélib'
+# Cloud — GCP migration of the Velib pipeline
 
-Branche parallèle de déploiement GCP (GCS, Dataproc Serverless, BigQuery,
-Looker Studio). Le pipeline local reste la cible par défaut : tout ce qui
-vit ici est activé via `PIPELINE_TARGET=cloud` et les variables de
-`.env.cloud`.
+Parallel GCP deployment branch (GCS, Dataproc Serverless, BigQuery,
+Looker Studio). The local pipeline remains the default target: everything
+under this folder is activated via `PIPELINE_TARGET=cloud` and the
+`.env.cloud` variables.
 
-## Contenu
+## Contents
 
 ```
 cloud/
 ├── terraform/          # IaC (gcs, bigquery, dataproc, iam)
-├── scripts/            # déploiement et soumission manuelle
-├── docs/               # spec, setup, coûts
-└── README.md           # ce fichier
+├── scripts/            # deployment and manual submission helpers
+├── docs/               # spec, setup, cost management
+└── README.md           # this file
 ```
 
-## Prérequis
+## Prerequisites
 
-- Un projet GCP dédié avec la facturation activée
-- `gcloud` CLI authentifié (`gcloud auth application-default login`)
+- A dedicated GCP project with billing enabled
+- `gcloud` CLI authenticated (`gcloud auth application-default login`)
 - `terraform` >= 1.6
-- Un budget GCP configuré à 20 € avec alertes 50 / 80 / 100 %
+- A GCP budget set at 20 EUR with 50 / 80 / 100 % alerts
 
-## Démarrage rapide
+## Quick start
 
 ```bash
 cp .env.cloud.example .env.cloud
-# renseigner GCP_PROJECT_ID, GCP_REGION, etc.
+# fill in GCP_PROJECT_ID, GCP_REGION, etc.
 
 cd cloud/terraform
 cp terraform.tfvars.example terraform.tfvars
-# renseigner project_id, region
+# fill in project_id, region
 
 terraform init
-terraform plan        # relire le diff avant tout apply
+terraform plan        # review the diff before any apply
 ```
 
-Aucune commande de ce dépôt ne lance `terraform apply` automatiquement.
-Le plan doit être relu explicitement. Voir `cloud/docs/setup.md` (à venir).
+No command in this repo runs `terraform apply` automatically. The plan
+must be reviewed explicitly. See `cloud/docs/setup.md`.
 
-## Garde-fous
+## Guardrails
 
-- Dataproc Serverless uniquement (pas de cluster permanent)
-- Bucket Bronze avec lifecycle Nearline 30 j / Coldline 90 j / suppression 365 j
-- BigQuery : partitionnement + clustering obligatoires, pas de `SELECT *`
-- `make cloud-down` en fin de session pour ne laisser tourner que le stockage
-- Aucune ressource GCP hors Terraform (si c'est dans GCP, c'est ici)
+- Dataproc Serverless only (no permanent cluster)
+- Bronze bucket with lifecycle Nearline 30d / Coldline 90d / delete 365d
+- BigQuery: partitioning and clustering mandatory, no `SELECT *`
+- Run `make cloud-down` at the end of a dev session to leave only storage
+- No GCP resource outside Terraform (if it lives in GCP, it lives here)
 
-## Spec complète
+## Full spec
 
-Voir `docs/architecture_cible.md`.
+See `docs/architecture_target.md`.

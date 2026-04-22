@@ -10,3 +10,7 @@ labels = {
   project    = "velib"
   managed_by = "terraform"
 }
+
+# Leave empty to skip the impersonation binding. Otherwise use an IAM
+# principal like "user:you@example.com" or "group:data@example.com".
+operator_principal = ""

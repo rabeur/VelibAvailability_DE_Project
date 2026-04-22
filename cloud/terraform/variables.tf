@@ -46,3 +46,9 @@ variable "labels" {
     managed_by = "terraform"
   }
 }
+
+variable "operator_principal" {
+  description = "IAM principal (e.g. 'user:alice@example.com') allowed to impersonate the pipeline service account. Empty string disables the binding."
+  type        = string
+  default     = ""
+}

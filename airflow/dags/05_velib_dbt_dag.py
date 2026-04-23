@@ -13,8 +13,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from airflow import DAG
 from airflow.operators.python import PythonOperator
+from utils.pipeline_target import is_cloud
+
+from airflow import DAG
 
 default_args = {
     "owner": "velib_team",
@@ -28,10 +30,20 @@ default_args = {
 
 DBT_WORKDIR = "/usr/app/dbt"
 
+# Output names declared in dbt/velib_dbt/profiles.yml. The cloud target is
+# added by the dbt phase of the migration; here we only select the right
+# one so the dbt DAG has nothing extra to do on BigQuery day.
+DBT_TARGET_LOCAL = "prod"
+DBT_TARGET_CLOUD = "bigquery_cloud"
+
 
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
+
+def _current_dbt_target() -> str:
+    return DBT_TARGET_CLOUD if is_cloud() else DBT_TARGET_LOCAL
 
 
 def _exec_dbt(dbt_command: str) -> None:
@@ -47,7 +59,8 @@ def _exec_dbt(dbt_command: str) -> None:
     client = docker_sdk.from_env()
     container = client.containers.get("velib_dbt")
 
-    full_cmd = f"dbt {dbt_command} --profiles-dir {DBT_WORKDIR}"
+    target = _current_dbt_target()
+    full_cmd = f"dbt {dbt_command} --profiles-dir {DBT_WORKDIR} --target {target}"
     print(f"\n{'=' * 70}")
     print(f"🔧 Running: {full_cmd}")
     print(f"{'=' * 70}\n")

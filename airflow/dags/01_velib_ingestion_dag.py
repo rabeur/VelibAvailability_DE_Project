@@ -1,12 +1,15 @@
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.operators.bash import BashOperator
-from datetime import datetime, timedelta
-import requests
-import pandas as pd
 import os
-import pytz
 import time
+from datetime import datetime, timedelta
+
+import pandas as pd
+import pytz
+import requests
+from airflow.operators.bash import BashOperator
+from airflow.operators.python import PythonOperator
+from utils.pipeline_target import get_cloud_config, is_cloud
+
+from airflow import DAG
 
 # DAG default configuration
 default_args = {
@@ -221,6 +224,50 @@ def validate_data(**context):
     return True
 
 
+def upload_snapshot_to_gcs(**context):
+    """Mirror the Bronze snapshot to GCS when cloud mode is active.
+
+    No-op in local mode so the DAG graph stays identical across both
+    targets — the local filesystem remains the single source of truth for
+    PIPELINE_TARGET=local, and the GCS object is only written when
+    explicitly running the cloud branch.
+    """
+    if not is_cloud():
+        print("⏭️  PIPELINE_TARGET=local, skipping GCS upload")
+        return None
+
+    ti = context["ti"]
+    local_path = ti.xcom_pull(task_ids="ingest_velib", key="file_path")
+    if not local_path or not os.path.exists(local_path):
+        raise ValueError(f"Local snapshot missing, cannot upload to GCS: {local_path}")
+
+    cloud_config = get_cloud_config()
+
+    # Preserve the Hive-style ingestion_date=.../hour=... partitioning on GCS
+    # so Dataproc reads the exact path layout the local pipeline already emits.
+    marker = "/bronze/velib/"
+    if marker not in local_path:
+        raise ValueError(f"Unexpected snapshot path layout, missing {marker!r}: {local_path}")
+    relative = local_path.split(marker, 1)[1]
+    object_name = f"bronze/velib/{relative}"
+
+    # Import lazily so a pure local install without apache-airflow-providers-google
+    # keeps DAG parsing green.
+    from airflow.providers.google.cloud.hooks.gcs import GCSHook
+
+    hook = GCSHook()
+    hook.upload(
+        bucket_name=cloud_config.bronze_bucket,
+        object_name=object_name,
+        filename=local_path,
+    )
+
+    gs_uri = f"gs://{cloud_config.bronze_bucket}/{object_name}"
+    print(f"✅ Snapshot mirrored to GCS: {gs_uri}")
+    ti.xcom_push(key="gcs_uri", value=gs_uri)
+    return gs_uri
+
+
 # DAG definition
 with DAG(
     "velib_ingestion_pipeline",
@@ -252,11 +299,21 @@ with DAG(
         retry_delay=timedelta(seconds=5),
     )
 
-    # Task 3: success notification
+    # Task 3: optional GCS mirror (cloud mode only, no-op locally)
+    upload_gcs_task = PythonOperator(
+        task_id="upload_to_gcs",
+        python_callable=upload_snapshot_to_gcs,
+        provide_context=True,
+        execution_timeout=timedelta(seconds=15),
+        retries=1,
+        retry_delay=timedelta(seconds=5),
+    )
+
+    # Task 4: success notification
     success_task = BashOperator(
         task_id="notify_success",
         bash_command='echo "✅ Vélib ingestion completed successfully"',
     )
 
     # dependency chain
-    ingest_task >> validate_task >> success_task
+    ingest_task >> validate_task >> upload_gcs_task >> success_task

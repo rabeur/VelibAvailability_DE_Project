@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 DEFAULT_GEOJSON_PATH = (
-    Path(__file__).resolve().parent / "data" / "paris_arrondissements.geojson"
+    Path(__file__).resolve().parent / "paris_arrondissements.geojson"
 )
 
 

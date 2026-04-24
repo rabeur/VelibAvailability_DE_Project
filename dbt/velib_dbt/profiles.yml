@@ -35,6 +35,5 @@ velib_dbt:
       location: "{{ env_var('GCP_REGION', 'europe-west1') }}"
       threads: 4
       priority: interactive
-      timeout_seconds: 300
       job_execution_timeout_seconds: 600
       job_retries: 1

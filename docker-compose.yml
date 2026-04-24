@@ -133,7 +133,17 @@ services:
     - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
     - AIRFLOW__CORE__LOAD_EXAMPLES=False
-    - _PIP_ADDITIONAL_REQUIREMENTS=docker
+    - _PIP_ADDITIONAL_REQUIREMENTS=docker apache-airflow-providers-google
+    # Cloud plumbing: GCP hooks use GOOGLE_APPLICATION_CREDENTIALS for ADC,
+    # DAG branching reads PIPELINE_TARGET. Empty defaults keep local mode
+    # unchanged — no Google SDK is called unless is_cloud() returns true.
+    - PIPELINE_TARGET=${PIPELINE_TARGET:-local}
+    - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcp/service_account.json
+    - GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
+    - GCP_REGION=${GCP_REGION:-europe-west1}
+    - GCP_BRONZE_BUCKET=${GCP_BRONZE_BUCKET:-}
+    - GCP_BIGQUERY_SILVER_DATASET=${GCP_BIGQUERY_SILVER_DATASET:-velib_silver}
+    - GCP_BIGQUERY_GOLD_DATASET=${GCP_BIGQUERY_GOLD_DATASET:-velib_gold}
     volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
@@ -141,6 +151,9 @@ services:
     - ./data_lake:/opt/airflow/data_lake
     - ./spark_jobs:/opt/airflow/spark_jobs
     - /var/run/docker.sock:/var/run/docker.sock
+    # Keyfile mount used by GOOGLE_APPLICATION_CREDENTIALS. Falls back to
+    # /dev/null in local mode so compose never fails on a missing host path.
+    - ${GCP_SERVICE_ACCOUNT_KEY:-/dev/null}:/etc/gcp/service_account.json:ro
     command: scheduler
     networks:
       - velib_network
@@ -163,7 +176,17 @@ services:
     - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
     - AIRFLOW__CORE__LOAD_EXAMPLES=False
-    - _PIP_ADDITIONAL_REQUIREMENTS=docker
+    - _PIP_ADDITIONAL_REQUIREMENTS=docker apache-airflow-providers-google
+    # Cloud plumbing: GCP hooks use GOOGLE_APPLICATION_CREDENTIALS for ADC,
+    # DAG branching reads PIPELINE_TARGET. Empty defaults keep local mode
+    # unchanged — no Google SDK is called unless is_cloud() returns true.
+    - PIPELINE_TARGET=${PIPELINE_TARGET:-local}
+    - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcp/service_account.json
+    - GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
+    - GCP_REGION=${GCP_REGION:-europe-west1}
+    - GCP_BRONZE_BUCKET=${GCP_BRONZE_BUCKET:-}
+    - GCP_BIGQUERY_SILVER_DATASET=${GCP_BIGQUERY_SILVER_DATASET:-velib_silver}
+    - GCP_BIGQUERY_GOLD_DATASET=${GCP_BIGQUERY_GOLD_DATASET:-velib_gold}
     volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
@@ -171,6 +194,8 @@ services:
     - ./data_lake:/opt/airflow/data_lake
     - ./spark_jobs:/opt/airflow/spark_jobs
     - /var/run/docker.sock:/var/run/docker.sock
+    # Same keyfile mount as airflow-scheduler.
+    - ${GCP_SERVICE_ACCOUNT_KEY:-/dev/null}:/etc/gcp/service_account.json:ro
     ports:
     - "8081:8080"
     command: webserver

@@ -120,6 +120,10 @@ def _run_spark_local(date: str, hour: str) -> bool:
     command = (
         "/opt/spark/bin/spark-submit "
         "--jars /opt/spark/jars/postgresql-42.7.1.jar "
+        # Python workers need these modules on sys.path to unpickle UDFs that
+        # import them (driver sees them via the main file's directory, workers
+        # don't — hence --py-files for local[*] mode).
+        "--py-files /opt/spark_jobs/paris_arrondissement_utils.py,/opt/spark_jobs/silver_writers.py,/opt/spark_jobs/data/paris_arrondissements.geojson "
         "--master local[*] "
         "--driver-memory 2g "
         "--executor-memory 2g "

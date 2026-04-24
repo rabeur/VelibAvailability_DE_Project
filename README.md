@@ -154,6 +154,24 @@ make format-sql
 make lint-sql
 ```
 
+### Cloud deployment (GCP, optional)
+
+A parallel deployment on Google Cloud is available behind a `PIPELINE_TARGET=cloud` switch. The local pipeline keeps working unchanged; the cloud branch swaps the filesystem for GCS, local Spark for Dataproc Serverless, and PostgreSQL for BigQuery. Airflow and dbt run in the same local containers in both modes.
+
+Full guide in `cloud/README.md`, cost rules in `cloud/docs/cost_management.md`, target diagram in `cloud/docs/architecture.md`.
+
+Quickstart once `.env.cloud` and `cloud/terraform/terraform.tfvars` are filled in:
+
+```bash
+make build                 # rebuild dbt image with dbt-bigquery adapter
+make cloud-init            # terraform init (one-off)
+make cloud-plan            # review the diff
+make cloud-up              # typed confirmation required
+make cloud-deploy-spark    # upload Spark job to the Bronze bucket
+make cloud-dbt-run         # materialise Gold on BigQuery
+make cloud-down            # at the end of a dev session
+```
+
 ---
 
 ## Example analyses enabled
@@ -178,9 +196,9 @@ make lint-sql
 
 The local platform is complete and operational. The following extensions are actively planned.
 
-### In progress — Cloud deployment on Google Cloud Platform
+### Cloud deployment on Google Cloud Platform
 
-A parallel cloud branch is being built to demonstrate portability and cloud-readiness, while preserving the local platform intact. The hybrid design keeps Airflow local to avoid the fixed cost of a managed scheduler and delegates storage, processing and warehousing to managed GCP services.
+The parallel GCP branch is wired end-to-end (Terraform, dual-mode DAGs, dual-adapter dbt container, `make cloud-*` targets). See the [Cloud deployment](#cloud-deployment-gcp-optional) quickstart above and `cloud/README.md` for the full guide.
 
 | Component | Local | GCP target |
 |---|---|---|

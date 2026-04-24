@@ -21,3 +21,20 @@ velib_dbt:
       dbname: velib_dw
       schema: gold_dev
       threads: 2
+
+    # Cloud target — selected when PIPELINE_TARGET=cloud. Keyfile auth is used
+    # over gcloud ADC so the same profile works inside the dbt container and
+    # in CI. `priority: interactive` keeps latency low without changing cost
+    # (BigQuery bills by bytes scanned, not job priority).
+    bigquery_cloud:
+      type: bigquery
+      method: service-account
+      keyfile:  "{{ env_var('GCP_SERVICE_ACCOUNT_KEY') }}"
+      project:  "{{ env_var('GCP_PROJECT_ID') }}"
+      dataset:  "{{ env_var('GCP_BIGQUERY_GOLD_DATASET', 'velib_gold') }}"
+      location: "{{ env_var('GCP_REGION', 'europe-west1') }}"
+      threads: 4
+      priority: interactive
+      timeout_seconds: 300
+      job_execution_timeout_seconds: 600
+      job_retries: 1

@@ -53,11 +53,18 @@ services:
       - velib_network
 
   dbt:
-    image: ghcr.io/dbt-labs/dbt-postgres:1.9.latest
+    build:
+      context: ./dbt
+    image: velib/dbt:1.9-dual
     container_name: velib_dbt
     entrypoint: ["tail", "-f", "/dev/null"]   # keep container alive for exec_run
     volumes:
       - ./dbt/velib_dbt:/usr/app/dbt
+      # Bind-mount the GCP service-account keyfile at a fixed in-container
+      # path when PIPELINE_TARGET=cloud. Falls back to /dev/null in local
+      # mode so compose never fails on a missing host path; the `prod`
+      # Postgres target does not read it.
+      - ${GCP_SERVICE_ACCOUNT_KEY:-/dev/null}:/etc/gcp/service_account.json:ro
     working_dir: /usr/app/dbt
     environment:
       - POSTGRES_HOST=postgres
@@ -65,6 +72,13 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      # GCP vars surfaced to dbt's env_var() calls in profiles.yml. Empty in
+      # local mode (the Postgres target ignores them); populated from
+      # .env.cloud when PIPELINE_TARGET=cloud.
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
+      - GCP_REGION=${GCP_REGION:-europe-west1}
+      - GCP_BIGQUERY_GOLD_DATASET=${GCP_BIGQUERY_GOLD_DATASET:-velib_gold}
+      - GCP_SERVICE_ACCOUNT_KEY=/etc/gcp/service_account.json
     depends_on:
       postgres:
         condition: service_healthy

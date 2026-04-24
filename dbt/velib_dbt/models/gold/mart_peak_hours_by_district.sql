@@ -32,10 +32,10 @@ joined as (
         sum(h.num_snapshots) as total_snapshots,
 
         -- Average rates across all stations in the district
-        round(avg(h.avg_occupancy_rate)::numeric, 2) as avg_occupancy_rate,
-        round(avg(h.avg_availability_rate)::numeric, 2) as avg_availability_rate,
-        round(avg(h.avg_bikes_available)::numeric, 2) as avg_bikes_available,
-        round(avg(h.avg_docks_available)::numeric, 2) as avg_docks_available,
+        round({{ numeric_cast('avg(h.avg_occupancy_rate)') }}, 2) as avg_occupancy_rate,
+        round({{ numeric_cast('avg(h.avg_availability_rate)') }}, 2) as avg_availability_rate,
+        round({{ numeric_cast('avg(h.avg_bikes_available)') }}, 2) as avg_bikes_available,
+        round({{ numeric_cast('avg(h.avg_docks_available)') }}, 2) as avg_docks_available,
 
         -- % of station-minutes where stations were empty / full
         round(

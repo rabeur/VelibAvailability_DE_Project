@@ -30,7 +30,9 @@ enriched as (
             else 'extra_large'
         end as capacity_category,
         case
-            when district_municipality_names ilike '%paris%' then 'Paris'
+            -- BigQuery has no ILIKE; lower() + LIKE is equivalent and
+            -- renders identically under Postgres.
+            when lower(district_municipality_names) like '%paris%' then 'Paris'
             else district_municipality_names
         end as city,
 

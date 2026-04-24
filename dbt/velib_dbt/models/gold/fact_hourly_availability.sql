@@ -12,7 +12,7 @@ with availability as (
 
     {% if is_incremental() %}
     -- On incremental runs: reprocess the last 2 days to absorb late-arriving data
-        where snapshot_date >= (select max(snapshot_date) - interval '1 day' from {{ this }})
+        where snapshot_date >= (select {{ date_sub_days('max(snapshot_date)', 1) }} from {{ this }})
     {% endif %}
 
 ),
@@ -29,15 +29,15 @@ hourly_agg as (
         count(*) as num_snapshots,
 
         -- Bike counts
-        round(avg(num_bikes_available)::numeric, 2) as avg_bikes_available,
-        round(avg(num_bikes_available_mechanical)::numeric, 2) as avg_bikes_mechanical,
-        round(avg(num_bikes_available_ebike)::numeric, 2) as avg_bikes_ebike,
-        round(avg(num_docks_available)::numeric, 2) as avg_docks_available,
+        round({{ numeric_cast('avg(num_bikes_available)') }}, 2) as avg_bikes_available,
+        round({{ numeric_cast('avg(num_bikes_available_mechanical)') }}, 2) as avg_bikes_mechanical,
+        round({{ numeric_cast('avg(num_bikes_available_ebike)') }}, 2) as avg_bikes_ebike,
+        round({{ numeric_cast('avg(num_docks_available)') }}, 2) as avg_docks_available,
 
         -- Rates
-        round(avg(occupancy_rate)::numeric, 2) as avg_occupancy_rate,
-        round(avg(availability_rate)::numeric, 2) as avg_availability_rate,
-        round(avg(service_rate)::numeric, 2) as avg_service_rate,
+        round({{ numeric_cast('avg(occupancy_rate)') }}, 2) as avg_occupancy_rate,
+        round({{ numeric_cast('avg(availability_rate)') }}, 2) as avg_availability_rate,
+        round({{ numeric_cast('avg(service_rate)') }}, 2) as avg_service_rate,
 
         -- Peak / trough within the hour
         max(num_bikes_available) as peak_bikes_available,

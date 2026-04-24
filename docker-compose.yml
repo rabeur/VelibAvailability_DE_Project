@@ -77,6 +77,7 @@ services:
       # .env.cloud when PIPELINE_TARGET=cloud.
       - GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
       - GCP_REGION=${GCP_REGION:-europe-west1}
+      - GCP_BIGQUERY_SILVER_DATASET=${GCP_BIGQUERY_SILVER_DATASET:-velib_silver}
       - GCP_BIGQUERY_GOLD_DATASET=${GCP_BIGQUERY_GOLD_DATASET:-velib_gold}
       - GCP_SERVICE_ACCOUNT_KEY=/etc/gcp/service_account.json
     depends_on:

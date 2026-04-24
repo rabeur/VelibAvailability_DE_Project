@@ -137,13 +137,64 @@ make status            # check service health
 
 ### Service endpoints
 
-| Service | URL |
-|---|---|
-| Airflow | http://localhost:8081 |
-| Spark Master UI | http://localhost:8080 |
-| Superset | http://localhost:8088 |
-| pgAdmin | http://localhost:5050 |
-| PostgreSQL | localhost:5432 |
+| Service | URL | Default credentials |
+|---|---|---|
+| Airflow | http://localhost:8081 | `admin` / `admin` |
+| Spark Master UI | http://localhost:8080 | — |
+| Superset | http://localhost:8088 | `admin` / `admin` (`SUPERSET_ADMIN_PASSWORD` in `.env`) |
+| pgAdmin | http://localhost:5050 | `admin@velib.com` / `admin` |
+| PostgreSQL | localhost:5432 | `velib` / `velib` (db `velib_dw`) |
+
+Credentials are generated on first run by `make first-launch` into `.env`
+(gitignored). Change them there before exposing any service beyond
+localhost.
+
+### DAG cadence
+
+| DAG | Schedule | Produces |
+|---|---|---|
+| `velib_ingestion_pipeline` | every minute | Parquet snapshot in `data_lake/bronze/velib/` |
+| `velib_data_quality` | every minute | CSV report in `data_lake/reports/data_quality/` |
+| `velib_bronze_cleanup_hourly` | hourly at H+0, scans H−1 | Removes corrupted/duplicate parquets, triggers silver |
+| `velib_silver_transformation_hourly` | triggered by the cleanup | Populates `silver.stations` and `silver.station_availability` |
+| `velib_dbt_gold_transformation` | daily at 03:00 UTC | Builds 5 `gold.*` tables via dbt |
+
+Silver is downstream of a *completed* Bronze hour, so the first Silver
+rows appear about one hour after the first ingestion. To validate the
+full chain without waiting for the 03:00 UTC schedule, run `make dbt-all`
+once Silver is populated.
+
+### Smoke test
+
+After `make first-launch`, give the stack ~5 min then:
+
+```bash
+make status                                          # all containers running / healthy
+find data_lake/bronze/velib -name '*.parquet' | wc -l   # > 0
+docker exec velib_postgres psql -U velib -d velib_dw \
+  -c "SELECT COUNT(*) FROM silver.stations;"        # > 0 once an hour has passed
+make dbt-all                                         # 5 gold tables, 30/30 tests PASS
+```
+
+### Troubleshooting first launch
+
+- **`PermissionError: /opt/airflow/logs/scheduler` in the scheduler logs.**
+  Docker created `airflow/logs` or `airflow/plugins` as root before
+  `make first-launch` chowned them. Fix with `make fix-perms` (requires
+  `sudo`) or `make give-perms` for dev mode, then restart the Airflow
+  services: `make restart SERVICE=airflow-scheduler && make restart
+  SERVICE=airflow-webserver`.
+- **Silver tasks fail with `conn_id 'google_cloud_default' isn't defined`.**
+  Your `.env.cloud` still has `PIPELINE_TARGET=cloud` enabled and a prior
+  version of the Makefile auto-sourced it. Ensure `PIPELINE_TARGET=local`
+  (or comment it out) in `.env.cloud`, then `make down && make up`.
+  With the current Makefile, `.env.cloud` is only sourced by `cloud-*`
+  targets, so `make up` always runs local mode.
+- **`port is already allocated` when running `make up`.** Another process
+  is bound to 5432, 5050, 8080, 8081 or 8088. Free the port or stop the
+  competing stack, then `make up`.
+- **Superset login fails with `superset_meta` errors.** Run `make
+  superset-db` once (idempotent) and `make restart SERVICE=superset`.
 
 ### Code quality
 
@@ -167,10 +218,14 @@ make build                 # rebuild dbt image with dbt-bigquery adapter
 make cloud-init            # terraform init (one-off)
 make cloud-plan            # review the diff
 make cloud-up              # typed confirmation required
+make cloud-stack-up        # docker compose up with .env.cloud sourced (instead of make up)
 make cloud-deploy-spark    # upload Spark job to the Bronze bucket
 make cloud-dbt-run         # materialise Gold on BigQuery
 make cloud-down            # at the end of a dev session
 ```
+
+`.env.cloud` is only sourced by `cloud-*` targets, so `make up` always
+runs the local pipeline regardless of what sits in `.env.cloud`.
 
 ---
 

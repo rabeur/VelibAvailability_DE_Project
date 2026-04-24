@@ -144,6 +144,12 @@ services:
     - GCP_BRONZE_BUCKET=${GCP_BRONZE_BUCKET:-}
     - GCP_BIGQUERY_SILVER_DATASET=${GCP_BIGQUERY_SILVER_DATASET:-velib_silver}
     - GCP_BIGQUERY_GOLD_DATASET=${GCP_BIGQUERY_GOLD_DATASET:-velib_gold}
+    # Airflow Connection bootstrapped from env so GCSHook()/BigQueryHook()
+    # resolve a valid google_cloud_default without manual CLI setup. Encoded
+    # URI form; the key_path and project are plumbed from the same vars as
+    # ADC so both auth paths agree. In local mode the keyfile points to
+    # /dev/null and is never opened because is_cloud() short-circuits first.
+    - AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT=google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fetc%2Fgcp%2Fservice_account.json&extra__google_cloud_platform__project=${GCP_PROJECT_ID:-}
     volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
@@ -187,6 +193,12 @@ services:
     - GCP_BRONZE_BUCKET=${GCP_BRONZE_BUCKET:-}
     - GCP_BIGQUERY_SILVER_DATASET=${GCP_BIGQUERY_SILVER_DATASET:-velib_silver}
     - GCP_BIGQUERY_GOLD_DATASET=${GCP_BIGQUERY_GOLD_DATASET:-velib_gold}
+    # Airflow Connection bootstrapped from env so GCSHook()/BigQueryHook()
+    # resolve a valid google_cloud_default without manual CLI setup. Encoded
+    # URI form; the key_path and project are plumbed from the same vars as
+    # ADC so both auth paths agree. In local mode the keyfile points to
+    # /dev/null and is never opened because is_cloud() short-circuits first.
+    - AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT=google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fetc%2Fgcp%2Fservice_account.json&extra__google_cloud_platform__project=${GCP_PROJECT_ID:-}
     volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs

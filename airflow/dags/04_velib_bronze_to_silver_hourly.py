@@ -181,9 +181,20 @@ def _run_spark_cloud(context: dict, date: str, hour: str) -> bool:
         "spark.executor.memory": "4g",
     }
 
+    # Modules imported by bronze_to_silver must be distributed explicitly
+    # (Dataproc Serverless only copies main_python_file_uri by default).
+    # Same rationale as the local --py-files fix.
+    support_uri = f"gs://{cloud_config.bronze_bucket}/spark_jobs"
     batch = {
         "pyspark_batch": {
             "main_python_file_uri": cloud_config.spark_job_uri,
+            "python_file_uris": [
+                f"{support_uri}/paris_arrondissement_utils.py",
+                f"{support_uri}/silver_writers.py",
+            ],
+            "file_uris": [
+                f"{support_uri}/data/paris_arrondissements.geojson",
+            ],
             "args": [date, hour],
         },
         "runtime_config": {"properties": spark_env_properties},

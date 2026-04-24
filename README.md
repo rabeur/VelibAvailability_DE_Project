@@ -195,6 +195,11 @@ make dbt-all                                         # 5 gold tables, 30/30 test
   competing stack, then `make up`.
 - **Superset login fails with `superset_meta` errors.** Run `make
   superset-db` once (idempotent) and `make restart SERVICE=superset`.
+- **Cloud mode: `PermissionError: /etc/gcp/service_account.json`.** The
+  service account JSON on the host is world-unreadable (`0600`, owned by
+  your UID). The Airflow containers run as UID 50000 and cannot open it.
+  Run `chmod 644 <keyfile>` on the host and retry the task — no container
+  restart needed.
 
 ### Code quality
 

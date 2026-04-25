@@ -1,8 +1,22 @@
+{#
+    BigQuery does not support delete+insert; merge is the atomic
+    equivalent. It only stays cheap when paired with partition_by,
+    otherwise MERGE scans the whole table on each run. dbt's config()
+    parser does not evaluate inline ternaries, so we precompute the
+    target-specific values via {% set %} blocks.
+#}
+{%- set is_bq = target.type == 'bigquery' -%}
+{%- set inc_strategy = 'merge' if is_bq else 'delete+insert' -%}
+{%- set partition_cfg = {'field': 'snapshot_date', 'data_type': 'date'} if is_bq else none -%}
+{%- set cluster_cfg = ['station_id'] if is_bq else none -%}
+
 {{
     config(
-        materialized      = 'incremental',
-        unique_key        = ['station_id', 'snapshot_date', 'snapshot_hour'],
-        incremental_strategy = 'delete+insert'
+        materialized         = 'incremental',
+        unique_key           = ['station_id', 'snapshot_date', 'snapshot_hour'],
+        incremental_strategy = inc_strategy,
+        partition_by         = partition_cfg,
+        cluster_by           = cluster_cfg
     )
 }}
 

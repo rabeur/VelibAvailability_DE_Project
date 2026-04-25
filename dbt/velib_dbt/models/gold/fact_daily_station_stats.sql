@@ -1,8 +1,20 @@
+{#
+    See fact_hourly_availability for the BigQuery rationale. dbt's
+    config() parser does not evaluate inline ternaries, so the target-
+    specific values are precomputed in {% set %} blocks.
+#}
+{%- set is_bq = target.type == 'bigquery' -%}
+{%- set inc_strategy = 'merge' if is_bq else 'delete+insert' -%}
+{%- set partition_cfg = {'field': 'snapshot_date', 'data_type': 'date'} if is_bq else none -%}
+{%- set cluster_cfg = ['station_id'] if is_bq else none -%}
+
 {{
     config(
         materialized         = 'incremental',
         unique_key           = ['station_id', 'snapshot_date'],
-        incremental_strategy = 'delete+insert'
+        incremental_strategy = inc_strategy,
+        partition_by         = partition_cfg,
+        cluster_by           = cluster_cfg
     )
 }}
 

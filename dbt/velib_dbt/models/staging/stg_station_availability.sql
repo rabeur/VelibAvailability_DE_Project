@@ -9,9 +9,20 @@ staged as (
     select
         station_id,
         snapshot_timestamp,
+        {%- if target.type == 'bigquery' %}
+        -- Postgres source has snapshot_date / snapshot_hour / snapshot_day_of_week
+        -- as generated columns. BigQuery's silver.station_availability is
+        -- written by the Spark connector without those derived fields, so we
+        -- compute them here. Subtract 1 from DAYOFWEEK to match Postgres'
+        -- 0-6 (Sunday=0) convention used downstream by Gold marts.
+        date(snapshot_timestamp) as snapshot_date,
+        extract(hour from snapshot_timestamp) as snapshot_hour,
+        extract(dayofweek from snapshot_timestamp) - 1 as snapshot_day_of_week,
+        {%- else %}
         snapshot_date,
         snapshot_hour,
         snapshot_day_of_week,
+        {%- endif %}
         num_bikes_available,
         num_bikes_available_mechanical,
         num_bikes_available_ebike,

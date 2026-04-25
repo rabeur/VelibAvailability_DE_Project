@@ -89,10 +89,21 @@ services:
   airflow-init:
     image: apache/airflow:2.9.0
     container_name: velib_airflow_init
+    # Run as root so we can fix bind-mount ownership before the scheduler
+    # and webserver come up. WSL2 bind mounts drift over time (host edits,
+    # transient root-owned writes during debugging) and Airflow crashes
+    # hard when the scheduler tries to mkdir a new logs/run_id folder
+    # under a directory it can't write to. Doing chown here keeps the
+    # stack self-healing on every `make up` / `make cloud-stack-up`.
+    user: "0:0"
     depends_on:
       postgres:
         condition: service_healthy
     environment:
+      - AIRFLOW_UID=${AIRFLOW_UID}
+      - AIRFLOW_GID=${AIRFLOW_GID}
+      - AIRFLOW_ADMIN_USERNAME=${AIRFLOW_ADMIN_USERNAME}
+      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD}
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
@@ -105,14 +116,22 @@ services:
     command:
       - -c
       - |
-        airflow db migrate &&
-        airflow users create \
-          --username ${AIRFLOW_ADMIN_USERNAME} \
-          --password ${AIRFLOW_ADMIN_PASSWORD} \
-          --firstname Admin \
-          --lastname User \
-          --role Admin \
-          --email admin@example.com || true
+        chown -R "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}" \
+          /opt/airflow/dags /opt/airflow/logs /opt/airflow/plugins
+        chmod -R u+rwX,g+rwX /opt/airflow/dags /opt/airflow/logs /opt/airflow/plugins
+        # Drop privileges back to airflow before running CLI commands so
+        # any new state files (config, .pyc caches) land with the same
+        # uid the scheduler/webserver use.
+        exec su -p airflow -c '
+          airflow db migrate &&
+          airflow users create \
+            --username "$$AIRFLOW_ADMIN_USERNAME" \
+            --password "$$AIRFLOW_ADMIN_PASSWORD" \
+            --firstname Admin \
+            --lastname User \
+            --role Admin \
+            --email admin@example.com || true
+        '
     networks:
       - velib_network
     restart: on-failure
@@ -144,6 +163,12 @@ services:
     - GCP_BRONZE_BUCKET=${GCP_BRONZE_BUCKET:-}
     - GCP_BIGQUERY_SILVER_DATASET=${GCP_BIGQUERY_SILVER_DATASET:-velib_silver}
     - GCP_BIGQUERY_GOLD_DATASET=${GCP_BIGQUERY_GOLD_DATASET:-velib_gold}
+    # Identity that Dataproc Serverless uses to execute the batch. When
+    # empty, the batch falls back to the Compute Engine default SA and
+    # the keyfile SA needs iam.serviceAccountUser on it — which it does
+    # not have by default. Setting it to velib-pipeline-sa routes the
+    # batch through the SA we already provision in terraform.
+    - GCP_DATAPROC_SERVICE_ACCOUNT=${GCP_DATAPROC_SERVICE_ACCOUNT:-}
     # Airflow Connection bootstrapped from env so GCSHook()/BigQueryHook()
     # resolve a valid google_cloud_default without manual CLI setup. Encoded
     # URI form; the key_path and project are plumbed from the same vars as
@@ -193,6 +218,12 @@ services:
     - GCP_BRONZE_BUCKET=${GCP_BRONZE_BUCKET:-}
     - GCP_BIGQUERY_SILVER_DATASET=${GCP_BIGQUERY_SILVER_DATASET:-velib_silver}
     - GCP_BIGQUERY_GOLD_DATASET=${GCP_BIGQUERY_GOLD_DATASET:-velib_gold}
+    # Identity that Dataproc Serverless uses to execute the batch. When
+    # empty, the batch falls back to the Compute Engine default SA and
+    # the keyfile SA needs iam.serviceAccountUser on it — which it does
+    # not have by default. Setting it to velib-pipeline-sa routes the
+    # batch through the SA we already provision in terraform.
+    - GCP_DATAPROC_SERVICE_ACCOUNT=${GCP_DATAPROC_SERVICE_ACCOUNT:-}
     # Airflow Connection bootstrapped from env so GCSHook()/BigQueryHook()
     # resolve a valid google_cloud_default without manual CLI setup. Encoded
     # URI form; the key_path and project are plumbed from the same vars as

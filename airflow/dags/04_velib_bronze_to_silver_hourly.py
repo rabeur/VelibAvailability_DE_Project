@@ -1,7 +1,7 @@
 import glob
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 import psycopg2
@@ -166,17 +166,20 @@ def _run_spark_cloud(context: dict, date: str, hour: str) -> bool:
 
     # Spark driver inherits PIPELINE_TARGET=cloud plus the GCP env vars the
     # silver writer needs; values are forwarded via runtime properties.
+    # Dataproc Serverless uses spark.driverEnv.* for the driver and
+    # spark.executorEnv.* for executors — spark.yarn.appMasterEnv.* is
+    # rejected (that prefix only applies to YARN-backed Dataproc clusters).
     spark_env_properties = {
         "spark.executorEnv.PIPELINE_TARGET": "cloud",
         "spark.executorEnv.GCP_PROJECT_ID": cloud_config.project_id,
         "spark.executorEnv.GCP_BRONZE_BUCKET": cloud_config.bronze_bucket,
         "spark.executorEnv.GCP_BIGQUERY_SILVER_DATASET": cloud_config.silver_dataset,
         "spark.executorEnv.GCP_BQ_TEMP_BUCKET": cloud_config.temp_bucket,
-        "spark.yarn.appMasterEnv.PIPELINE_TARGET": "cloud",
-        "spark.yarn.appMasterEnv.GCP_PROJECT_ID": cloud_config.project_id,
-        "spark.yarn.appMasterEnv.GCP_BRONZE_BUCKET": cloud_config.bronze_bucket,
-        "spark.yarn.appMasterEnv.GCP_BIGQUERY_SILVER_DATASET": cloud_config.silver_dataset,
-        "spark.yarn.appMasterEnv.GCP_BQ_TEMP_BUCKET": cloud_config.temp_bucket,
+        "spark.driverEnv.PIPELINE_TARGET": "cloud",
+        "spark.driverEnv.GCP_PROJECT_ID": cloud_config.project_id,
+        "spark.driverEnv.GCP_BRONZE_BUCKET": cloud_config.bronze_bucket,
+        "spark.driverEnv.GCP_BIGQUERY_SILVER_DATASET": cloud_config.silver_dataset,
+        "spark.driverEnv.GCP_BQ_TEMP_BUCKET": cloud_config.temp_bucket,
         "spark.executor.instances": "2",
         "spark.executor.memory": "4g",
     }
@@ -195,11 +198,27 @@ def _run_spark_cloud(context: dict, date: str, hour: str) -> bool:
             "file_uris": [
                 f"{support_uri}/data/paris_arrondissements.geojson",
             ],
-            "args": [date, hour],
+            # Pass GCP config as named CLI overrides because Dataproc
+            # Serverless does not propagate spark.driverEnv.* / executorEnv.*
+            # into the driver process env reliably. bronze_to_silver.py
+            # injects these back into os.environ at the start of main().
+            "args": [
+                "cloud",
+                date,
+                hour,
+                f"--bronze-bucket={cloud_config.bronze_bucket}",
+                f"--gcp-project={cloud_config.project_id}",
+                f"--silver-dataset={cloud_config.silver_dataset}",
+                f"--temp-bucket={cloud_config.temp_bucket}",
+            ],
         },
         "runtime_config": {"properties": spark_env_properties},
     }
 
+    # Dataproc Serverless v1 EnvironmentConfig only accepts execution_config
+    # and peripherals_config — there is no top-level environment_variables
+    # field. Driver/executor env vars therefore travel exclusively through
+    # spark.driverEnv.* / spark.executorEnv.* in runtime_config.properties.
     if cloud_config.service_account:
         batch["environment_config"] = {
             "execution_config": {"service_account": cloud_config.service_account},
@@ -282,7 +301,10 @@ def _validate_silver_bigquery(date: str, hour: str, hour_timestamp: str) -> bool
           AND snapshot_timestamp < TIMESTAMP_ADD(TIMESTAMP('{hour_timestamp}'), INTERVAL 1 HOUR)
     """
 
-    hook = BigQueryHook(use_legacy_sql=False)
+    # location is mandatory on get_records; pass the dataset region so the
+    # hook does not raise "Need to specify 'location'" before issuing the
+    # query.
+    hook = BigQueryHook(use_legacy_sql=False, location=cloud_config.region)
     rows = hook.get_records(sql)
     total_rows, unique_stations, earliest, latest = rows[0]
 
@@ -342,7 +364,7 @@ def _show_summary_bigquery() -> None:
         f"`{cloud_config.project_id}.{cloud_config.silver_dataset}.station_availability`"
     )
 
-    hook = BigQueryHook(use_legacy_sql=False)
+    hook = BigQueryHook(use_legacy_sql=False, location=cloud_config.region)
 
     total_stations = hook.get_records(f"SELECT COUNT(*) FROM {stations_table}")[0][0]
     total_snapshots = hook.get_records(f"SELECT COUNT(*) FROM {availability_table}")[0][0]
@@ -361,6 +383,15 @@ def _show_summary_bigquery() -> None:
         LIMIT 1
         """)
     last_snapshot = latest[0] if latest else None
+
+    # BigQueryHook.get_records returns TIMESTAMP values as UNIX epoch floats,
+    # whereas psycopg2 yields datetime objects. Normalise here so _log_summary
+    # can call .strftime() identically for both targets.
+    if last_snapshot is not None:
+        snapshot_hour, rows_added, stations_count = last_snapshot
+        if isinstance(snapshot_hour, (int, float)):
+            snapshot_hour = datetime.fromtimestamp(snapshot_hour, tz=timezone.utc)
+        last_snapshot = (snapshot_hour, rows_added, stations_count)
 
     _log_summary(total_stations, total_snapshots, last_snapshot)
 

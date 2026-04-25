@@ -517,7 +517,47 @@ def main():
       spark-submit bronze_to_silver.py <bronze_path> <date_filter> [hour_filter]
     If <bronze_path> is omitted, the target-appropriate default is used.
     """
-    pipeline_target = os.getenv("PIPELINE_TARGET", "local").lower()
+    args = sys.argv[1:]
+
+    pipeline_target = None
+    if args:
+        first_arg = args[0].lower()
+        if first_arg in {"local", "cloud"}:
+            pipeline_target = first_arg
+            args = args[1:]
+        elif first_arg.startswith("--target="):
+            pipeline_target = first_arg.split("=", 1)[1].lower()
+            args = args[1:]
+        elif first_arg.startswith("--pipeline-target="):
+            pipeline_target = first_arg.split("=", 1)[1].lower()
+            args = args[1:]
+
+    pipeline_target = pipeline_target or os.getenv("PIPELINE_TARGET", "local").lower()
+    os.environ["PIPELINE_TARGET"] = pipeline_target
+
+    # Dataproc Serverless does not reliably propagate spark.driverEnv.* into
+    # the driver process environment, so the DAG forwards GCP config as
+    # named CLI overrides and we inject them into os.environ here. The rest
+    # of the script (writer factory, _default_bronze_path) keeps reading env
+    # vars unchanged, so local invocation paths are not affected.
+    _named_to_env = {
+        "--bronze-bucket": "GCP_BRONZE_BUCKET",
+        "--gcp-project": "GCP_PROJECT_ID",
+        "--silver-dataset": "GCP_BIGQUERY_SILVER_DATASET",
+        "--temp-bucket": "GCP_BQ_TEMP_BUCKET",
+    }
+    _remaining: list[str] = []
+    for _a in args:
+        _matched = False
+        for _prefix, _env in _named_to_env.items():
+            if _a.startswith(_prefix + "="):
+                os.environ[_env] = _a.split("=", 1)[1]
+                _matched = True
+                break
+        if not _matched:
+            _remaining.append(_a)
+    args = _remaining
+
     default_bronze_path = _default_bronze_path(pipeline_target)
 
     # Flexible argument parsing
@@ -526,7 +566,6 @@ def main():
     # 2) spark-submit bronze_to_silver.py 2026-02-26 14
     # 3) spark-submit bronze_to_silver.py /path/to/bronze 2026-02-26
     # 4) spark-submit bronze_to_silver.py /path/to/bronze 2026-02-26 14
-    args = sys.argv[1:]
 
     if len(args) == 0:
         print("Usage: spark-submit bronze_to_silver.py [bronze_path] <date_filter> [hour_filter]")

@@ -172,30 +172,39 @@ class BigQuerySilverWriter(SilverWriter):
     def _table_ref(self, table_name: str) -> str:
         return f"{self.project_id}.{self.dataset_id}.{table_name}"
 
+    def _table_exists(self, table_name: str) -> bool:
+        # Use the BigQuery REST API directly instead of catching a Spark
+        # exception: on Dataproc Serverless 2.x the BQ connector surfaces a
+        # missing table as a NullPointerException ("schema is null"), not
+        # as a "not found" error, so message-based detection is unreliable.
+        # ADC picks up the batch's service account credentials.
+        from google.api_core.exceptions import NotFound
+        from google.cloud import bigquery
+
+        client = bigquery.Client(project=self.project_id)
+        try:
+            client.get_table(self._table_ref(table_name))
+            return True
+        except NotFound:
+            return False
+
     def _read_existing(
         self, table_name: str, selected_columns: list | None = None, filter_expr: str | None = None
     ) -> DataFrame | None:
         """Read an existing Silver table. Returns None if it does not exist yet."""
-        try:
-            reader = self.spark.read.format("bigquery").option("table", self._table_ref(table_name))
-            if filter_expr:
-                reader = reader.option("filter", filter_expr)
-            df = reader.load()
-            if selected_columns:
-                df = df.select(*selected_columns)
-            return df
-        except Exception as exc:
-            # The BigQuery connector raises a generic IllegalArgumentException
-            # when the table is missing. Schema bootstrap happens separately
-            # (bootstrap_bigquery.sh), but we must not fail the very first
-            # ingestion if the table has not been materialised yet.
-            message = str(exc).lower()
-            if "not found" in message or "does not exist" in message or "404" in message:
-                logger.warning(
-                    f"  ⚠️  BigQuery table {table_name} not found, falling back to full insert"
-                )
-                return None
-            raise
+        if not self._table_exists(table_name):
+            logger.warning(
+                f"  ⚠️  BigQuery table {table_name} not found, falling back to full insert"
+            )
+            return None
+
+        reader = self.spark.read.format("bigquery").option("table", self._table_ref(table_name))
+        if filter_expr:
+            reader = reader.option("filter", filter_expr)
+        df = reader.load()
+        if selected_columns:
+            df = df.select(*selected_columns)
+        return df
 
     def _append(self, df: DataFrame, table_name: str, **extra_options) -> None:
         writer = (

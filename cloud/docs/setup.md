@@ -79,8 +79,16 @@ Review the plan. You should see:
 - 5 API enablements (`google_project_service.required`)
 - 1 GCS bucket with 3 lifecycle rules
 - 2 BigQuery datasets
-- 1 service account + 6 IAM bindings (7 if `operator_principal` is set)
+- 1 service account + 8 IAM bindings (9 if `operator_principal` is set)
 - No costly permanent resource such as cluster, VM, Cloud SQL, or NAT
+
+The 8 bindings cover: `storage.objectAdmin` on the Bronze bucket,
+`bigquery.dataEditor` on each dataset (×2), project-level `bigquery.jobUser`
+and `bigquery.readSessionUser` (the latter needed by the Spark BigQuery
+connector's Storage Read API), `dataproc.editor` and `dataproc.worker`
+project-level, and `iam.serviceAccountUser` self-binding so the SA can
+submit Dataproc batches that run as itself. The optional 9th is
+`iam.serviceAccountTokenCreator` for the human operator.
 
 ## 7. Apply
 
@@ -116,7 +124,75 @@ Store this file outside the repo. It is referenced by `GCP_SERVICE_ACCOUNT_KEY` 
 
 Alternative without a key: configure impersonation via `operator_principal` and use the SA with `GOOGLE_APPLICATION_CREDENTIALS` unset. Prefer impersonation whenever possible (no long-lived secret).
 
-## 10. Teardown
+## 10. Run the pipeline in cloud mode
+
+Once Terraform has applied, the local Docker stack can flip to cloud
+mode. The same Airflow scheduler and dbt container drive both targets;
+the switch is `PIPELINE_TARGET=cloud` plus the GCS / BigQuery env vars,
+all sourced exclusively by `cloud-*` Make targets.
+
+```bash
+cp .env.cloud.example .env.cloud
+# fill in GCP_PROJECT_ID, GCP_REGION, GCP_BRONZE_BUCKET,
+# GCP_BIGQUERY_SILVER_DATASET, GCP_BIGQUERY_GOLD_DATASET,
+# GCP_SERVICE_ACCOUNT_KEY (absolute path to the JSON keyfile),
+# GCP_DATAPROC_SERVICE_ACCOUNT (the velib-pipeline-sa email),
+# and PIPELINE_TARGET=cloud.
+chmod 644 "$GCP_SERVICE_ACCOUNT_KEY"
+```
+
+The keyfile must be world-readable: containers run as UID 50000
+(Airflow) and a non-root UID for `velib_dbt`. A 0600 keyfile will fail
+to open inside the container with `PermissionError`.
+
+```bash
+make build              # rebuild the dbt image so it ships dbt-bigquery
+make cloud-deploy-spark # rsync spark_jobs/ to gs://<bronze>/spark_jobs/
+make cloud-stack-up     # docker compose up with .env.cloud sourced
+```
+
+`make cloud-stack-up` is the cloud equivalent of `make up`: it starts
+the same containers but injects `PIPELINE_TARGET=cloud` and the GCP
+variables so DAGs branch to GCS / Dataproc / BigQuery. Conversely,
+plain `make up` always runs local mode regardless of what sits in
+`.env.cloud`.
+
+In the Airflow UI (http://localhost:8081), unpause and trigger the
+DAGs in this order:
+
+1. `velib_ingestion_pipeline` — writes minute-level snapshots to
+   `gs://<bronze>/bronze/velib/...`
+2. `velib_data_quality` — produces a CSV report in
+   `gs://<bronze>/reports/data_quality/...`
+3. `velib_bronze_cleanup_hourly` — auto-triggers the Silver DAG once
+   the previous hour partition is clean
+4. `velib_silver_transformation_hourly` — submits a Dataproc Serverless
+   batch named `velib-silver-YYYYMMDD-HH-XXXXXX` and validates the
+   resulting BigQuery rows
+5. `velib_dbt_gold_transformation` — runs dbt staging + gold + tests
+   on BigQuery via the `bigquery_cloud` profile
+
+Watch the Dataproc batch in the GCP console (or via
+`gcloud dataproc batches list --region=europe-west1`); a typical run
+processes ~75 k bronze rows in 60 to 90 seconds.
+
+Confirm everything landed:
+
+```bash
+bq query --use_legacy_sql=false \
+  "SELECT table_name, row_count
+   FROM \`<project_id>.velib_silver.__TABLES__\`
+   UNION ALL
+   SELECT table_name, row_count
+   FROM \`<project_id>.velib_gold.__TABLES__\`
+   ORDER BY table_name"
+```
+
+Both `silver.*` tables and the five `gold.*` tables (plus the two
+`stg_*` views materialised in the Gold dataset) should have non-zero
+counts.
+
+## 11. Teardown
 
 At the end of a dev session:
 
@@ -138,3 +214,11 @@ terraform destroy
 **IAM "permission denied" when launching a job.** Check that `operator_principal` is set and matches the current user. IAM propagation can take 1 to 2 minutes.
 
 **`terraform destroy` hangs on the bucket.** Empty the objects before destroying (command above). The bucket is protected against accidental deletion by default.
+
+**Dataproc batch fails with `User not authorized to act as service account ...`.** The submitter (the keyfile's identity) lacks `iam.serviceAccountUser` on the Dataproc batch SA. Terraform creates a self-binding so the pipeline SA can act as itself; check it is present (`pipeline_sa_self_user` in `iam.tf`) and that `GCP_DATAPROC_SERVICE_ACCOUNT` in `.env.cloud` is set to the pipeline SA email.
+
+**Dataproc batch driver crashes with `PERMISSION_DENIED: bigquery.readsessions.create`.** The Spark BigQuery connector uses the BigQuery Storage Read API, which needs `roles/bigquery.readSessionUser` at the project level. Terraform owns this binding (`pipeline_sa_bq_readsessions` in `iam.tf`); a missing one usually means the apply did not include it.
+
+**dbt fails with `Access Denied: bigquery.datasets.create`.** dbt's default `generate_schema_name` macro suffixes custom schemas (`+schema: staging` becomes `<gold>_staging`), which would require dataset creation. The repo overrides the macro for BigQuery in `dbt/velib_dbt/macros/generate_schema_name.sql` so staging materialises inside the Gold dataset; if that file is missing or removed, dbt regresses to the default behaviour and trips this permission.
+
+**`PermissionError: /etc/gcp/service_account.json` inside a container.** The keyfile on the host is `0600`. Containers run as UID 50000 (Airflow) or a service-specific UID (dbt) and cannot open it. Run `chmod 644 <keyfile>` on the host; no container restart needed.

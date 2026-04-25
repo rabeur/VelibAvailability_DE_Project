@@ -23,7 +23,9 @@ with hourly as (
     select * from {{ ref('fact_hourly_availability') }}
 
     {% if is_incremental() %}
-        where snapshot_date >= (select {{ date_sub_days('max(snapshot_date)', 1) }} from {{ this }})
+    -- See fact_hourly_availability: incremental_lookback handles the empty-
+    -- target case so the lookback never collapses to `>= NULL`.
+        where snapshot_date >= (select {{ incremental_lookback('snapshot_date', 1) }} from {{ this }})
     {% endif %}
 
 ),

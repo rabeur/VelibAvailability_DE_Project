@@ -25,8 +25,10 @@ with availability as (
     select * from {{ ref('stg_station_availability') }}
 
     {% if is_incremental() %}
-    -- On incremental runs: reprocess the last 2 days to absorb late-arriving data
-        where snapshot_date >= (select {{ date_sub_days('max(snapshot_date)', 1) }} from {{ this }})
+    -- On incremental runs: reprocess the last 2 days to absorb late-arriving
+    -- data. The incremental_lookback macro coalesces an empty target table to
+    -- a 1900-01-01 floor so we don't silently no-op on a re-bootstrapped run.
+        where snapshot_date >= (select {{ incremental_lookback('snapshot_date', 1) }} from {{ this }})
     {% endif %}
 
 ),

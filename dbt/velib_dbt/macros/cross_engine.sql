@@ -28,6 +28,25 @@
 {%- endmacro -%}
 
 
+{%- macro incremental_lookback(date_column, days) -%}
+    {#-
+        Lower-bound expression for an incremental rebuild on `date_column`.
+        Returns max(date_column) - {{ days }} days when the target table has
+        rows, and a 1900-01-01 floor otherwise. Without the floor an empty
+        target table makes max() NULL, the resulting `>= NULL` filter
+        rejects every row, and the incremental run silently inserts zero
+        rows while still reporting PASS — a foot-gun we hit once after a
+        botched manual run.
+    -#}
+    coalesce(
+        {{ date_sub_days('max(' ~ date_column ~ ')', days) }},
+        {%- if target.type == 'bigquery' %} date '1900-01-01'
+        {%- else %} '1900-01-01'::date
+        {%- endif %}
+    )
+{%- endmacro -%}
+
+
 {%- macro first_by_desc(pick_expr, order_expr) -%}
     {#-
         Return the first value of `pick_expr` ordered by `order_expr` desc.

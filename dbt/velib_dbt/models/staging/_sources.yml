@@ -3,8 +3,10 @@ version: 2
 sources:
   - name: silver
     description: "Silver layer — cleaned and enriched Vélib data produced by the Spark pipeline"
-    database: velib_dw
-    schema: silver
+    # `database` maps to the Postgres DB locally and to the GCP project on
+    # BigQuery; `schema` maps to the Postgres schema or the BQ dataset.
+    database: "{{ env_var('GCP_PROJECT_ID') if target.type == 'bigquery' else 'velib_dw' }}"
+    schema:   "{{ env_var('GCP_BIGQUERY_SILVER_DATASET', 'velib_silver') if target.type == 'bigquery' else 'silver' }}"
     tables:
 
       - name: stations

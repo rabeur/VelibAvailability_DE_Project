@@ -4,6 +4,11 @@ ifneq (,$(wildcard .env))
     export $(shell sed 's/=.*//' .env)
 endif
 
+# .env.cloud is intentionally NOT auto-included: sourcing it globally
+# leaks PIPELINE_TARGET=cloud and GCP_* into every local target (make up,
+# make status, make dbt-run), silently switching the stack to cloud mode.
+# Cloud-* recipes source it explicitly at recipe time via $(CLOUD_ENV).
+
 # Variables
 COMPOSE_FILE = docker-compose.yml
 PROJECT_NAME = velib_project
@@ -13,12 +18,22 @@ PARQUET_CLEANUP_IMAGE = velib-cleanup
 PARQUET_CLEANUP_ROOT = $(PWD)/data_lake/bronze/velib
 INGEST_IMAGE = velib-ingest
 INGEST_DATA_LAKE_ROOT = $(PWD)/data_lake
+CLOUD_TF_DIR = cloud/terraform
+CLOUD_SCRIPTS_DIR = cloud/scripts
+
+# Source .env.cloud into a single sub-shell for one recipe line. Used by
+# every cloud-* target that needs PIPELINE_TARGET=cloud or GCP_* at runtime
+# without polluting the local targets.
+CLOUD_ENV = set -a && . ./.env.cloud && set +a
 
 .PHONY: build up up-logs down logs clean first-launch status restart shell fix-perms give-perms \
 	dbt-deps dbt-run dbt-run-staging dbt-run-gold dbt-test dbt-all dbt-docs \
 	silver-schema gold-schema superset-db cleanup-parquet-build cleanup-parquet \
 	cleanup-parquet-delete ingest-build ingest-manual format-python lint-python \
-	format-sql lint-sql help
+	format-sql lint-sql help \
+	cloud-init cloud-stack-up cloud-plan cloud-up cloud-down cloud-deploy-spark \
+	cloud-run-ingestion cloud-dbt-run cloud-dbt-test cloud-logs cloud-cost \
+	_require-env-cloud _require-tfvars
 
 # Build docker images
 build:
@@ -204,6 +219,86 @@ ingest-manual: ingest-build
 		-v "$(INGEST_DATA_LAKE_ROOT):/app/data_lake" \
 		$(INGEST_IMAGE)
 
+# ─── Cloud (GCP) deployment ──────────────────────────────────────────────────
+
+# Guards: commands that hit GCP need .env.cloud and terraform.tfvars. We fail
+# loudly rather than silently running with defaults that could bill the wrong
+# project or create unintended resources.
+_require-env-cloud:
+	@if [ ! -f .env.cloud ]; then \
+		echo "ERROR: .env.cloud is missing. Copy .env.cloud.example and fill it in."; \
+		exit 1; \
+	fi
+
+_require-tfvars:
+	@if [ ! -f $(CLOUD_TF_DIR)/terraform.tfvars ]; then \
+		echo "ERROR: $(CLOUD_TF_DIR)/terraform.tfvars is missing."; \
+		echo "       Copy $(CLOUD_TF_DIR)/terraform.tfvars.example and edit it."; \
+		exit 1; \
+	fi
+
+# One-time terraform init (local backend, no remote state).
+cloud-init:
+	terraform -chdir=$(CLOUD_TF_DIR) init
+
+# Bring up the stack with .env.cloud sourced so Airflow containers start
+# in cloud mode (PIPELINE_TARGET=cloud, GCP_* vars, keyfile mounted). Use
+# this instead of `make up` when running the cloud pipeline end-to-end.
+cloud-stack-up: _require-env-cloud
+	$(CLOUD_ENV) && docker compose -f $(COMPOSE_FILE) up -d
+
+# Preview every change. Mandatory before cloud-up per CLAUDE.md.
+cloud-plan: _require-env-cloud _require-tfvars
+	$(CLOUD_ENV) && terraform -chdir=$(CLOUD_TF_DIR) plan -var-file=terraform.tfvars
+
+# Apply with an explicit typed confirmation — avoids accidental creation.
+cloud-up: _require-env-cloud _require-tfvars
+	@echo "About to create or update GCP resources via terraform apply."
+	@read -p "Type 'apply' to confirm: " ans; [ "$$ans" = "apply" ] || (echo "Aborted."; exit 1)
+	$(CLOUD_ENV) && terraform -chdir=$(CLOUD_TF_DIR) apply -var-file=terraform.tfvars
+
+# Destroy everything managed by Terraform (including API activations so no
+# residual per-month minimums remain). Typed confirmation required.
+cloud-down: _require-env-cloud _require-tfvars
+	@echo "About to DESTROY every GCP resource managed by Terraform."
+	@read -p "Type 'destroy' to confirm: " ans; [ "$$ans" = "destroy" ] || (echo "Aborted."; exit 1)
+	$(CLOUD_ENV) && terraform -chdir=$(CLOUD_TF_DIR) destroy -var-file=terraform.tfvars
+
+# Upload Spark job sources to the Bronze bucket for Dataproc to pick up.
+cloud-deploy-spark: _require-env-cloud
+	$(CLOUD_ENV) && bash $(CLOUD_SCRIPTS_DIR)/deploy_spark_job.sh
+
+# Trigger the ingestion DAG in cloud mode. Assumes `make cloud-stack-up`
+# has been run so the airflow services are already in cloud mode.
+cloud-run-ingestion: _require-env-cloud
+	$(CLOUD_ENV) && docker compose -f $(COMPOSE_FILE) exec -T \
+		-e PIPELINE_TARGET=cloud \
+		airflow-webserver airflow dags trigger 01_velib_ingestion_pipeline
+
+# dbt run/test against BigQuery. The container must already be built with
+# the dual-adapter image (`make build`) and the keyfile must be mounted.
+cloud-dbt-run: _require-env-cloud
+	$(CLOUD_ENV) && docker exec -e PIPELINE_TARGET=cloud velib_dbt \
+		dbt run --profiles-dir /usr/app/dbt --target bigquery_cloud
+
+cloud-dbt-test: _require-env-cloud
+	$(CLOUD_ENV) && docker exec -e PIPELINE_TARGET=cloud velib_dbt \
+		dbt test --profiles-dir /usr/app/dbt --target bigquery_cloud
+
+# Surface the last Dataproc Serverless batch description (status, URIs,
+# stdout pointer). Bash script handles region + project resolution.
+cloud-logs: _require-env-cloud
+	$(CLOUD_ENV) && bash $(CLOUD_SCRIPTS_DIR)/run_dataproc_batch.sh --logs-only
+
+# Quick pointer to the billing dashboard. Live cost rollup via CLI needs
+# billing API + org-level perms we don't assume here.
+cloud-cost: _require-env-cloud
+	@$(CLOUD_ENV) && echo "Billing console: https://console.cloud.google.com/billing (project $$GCP_PROJECT_ID)"
+	@echo "Current month estimate:"
+	@$(CLOUD_ENV) && gcloud billing projects describe $$GCP_PROJECT_ID --format='value(billingAccountName)' 2>/dev/null \
+		| awk -F/ '{ print "  Linked to billing account: "$$2 }' || \
+		echo "  (gcloud CLI not available or project not linked to a billing account)"
+
 # ─────────────────────────────────────────────────────────────────────────────
 
 # help
@@ -240,4 +335,18 @@ help:
 	@echo "  lint-python            : Lint Python code with Ruff"
 	@echo "  format-sql             : Auto-fix SQL style with SQLFluff"
 	@echo "  lint-sql               : Lint SQL style with SQLFluff"
+	@echo ""
+	@echo "Cloud (GCP, needs .env.cloud + terraform.tfvars):"
+	@echo "  cloud-init          : terraform init"
+	@echo "  cloud-stack-up      : docker compose up with .env.cloud sourced (use instead of make up for cloud)"
+	@echo "  cloud-plan          : terraform plan (always run before cloud-up)"
+	@echo "  cloud-up            : terraform apply (typed confirmation)"
+	@echo "  cloud-down          : terraform destroy (typed confirmation)"
+	@echo "  cloud-deploy-spark  : upload spark_jobs/ to the Bronze bucket"
+	@echo "  cloud-run-ingestion : trigger ingestion DAG with PIPELINE_TARGET=cloud"
+	@echo "  cloud-dbt-run       : dbt run against BigQuery (bigquery_cloud target)"
+	@echo "  cloud-dbt-test      : dbt test against BigQuery"
+	@echo "  cloud-logs          : describe the latest Dataproc Serverless batch"
+	@echo "  cloud-cost          : open the billing console for the project"
+	@echo ""
 	@echo "  help        : This help"

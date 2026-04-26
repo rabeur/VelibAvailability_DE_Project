@@ -6,3 +6,6 @@ exclude_rules = LT05
 
 [sqlfluff:templater:jinja:context]
 project_name = velib_dbt
+# Fake `target` exposed so cross-engine macros that branch on `target.type`
+# render to the Postgres side during static linting.
+target = {"type": "postgres"}

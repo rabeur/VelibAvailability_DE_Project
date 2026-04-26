@@ -53,11 +53,18 @@ services:
       - velib_network
 
   dbt:
-    image: ghcr.io/dbt-labs/dbt-postgres:1.9.latest
+    build:
+      context: ./dbt
+    image: velib/dbt:1.9-dual
     container_name: velib_dbt
     entrypoint: ["tail", "-f", "/dev/null"]   # keep container alive for exec_run
     volumes:
       - ./dbt/velib_dbt:/usr/app/dbt
+      # Bind-mount the GCP service-account keyfile at a fixed in-container
+      # path when PIPELINE_TARGET=cloud. Falls back to /dev/null in local
+      # mode so compose never fails on a missing host path; the `prod`
+      # Postgres target does not read it.
+      - ${GCP_SERVICE_ACCOUNT_KEY:-/dev/null}:/etc/gcp/service_account.json:ro
     working_dir: /usr/app/dbt
     environment:
       - POSTGRES_HOST=postgres
@@ -65,6 +72,14 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      # GCP vars surfaced to dbt's env_var() calls in profiles.yml. Empty in
+      # local mode (the Postgres target ignores them); populated from
+      # .env.cloud when PIPELINE_TARGET=cloud.
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
+      - GCP_REGION=${GCP_REGION:-europe-west1}
+      - GCP_BIGQUERY_SILVER_DATASET=${GCP_BIGQUERY_SILVER_DATASET:-velib_silver}
+      - GCP_BIGQUERY_GOLD_DATASET=${GCP_BIGQUERY_GOLD_DATASET:-velib_gold}
+      - GCP_SERVICE_ACCOUNT_KEY=/etc/gcp/service_account.json
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,10 +89,21 @@ services:
   airflow-init:
     image: apache/airflow:2.9.0
     container_name: velib_airflow_init
+    # Run as root so we can fix bind-mount ownership before the scheduler
+    # and webserver come up. WSL2 bind mounts drift over time (host edits,
+    # transient root-owned writes during debugging) and Airflow crashes
+    # hard when the scheduler tries to mkdir a new logs/run_id folder
+    # under a directory it can't write to. Doing chown here keeps the
+    # stack self-healing on every `make up` / `make cloud-stack-up`.
+    user: "0:0"
     depends_on:
       postgres:
         condition: service_healthy
     environment:
+      - AIRFLOW_UID=${AIRFLOW_UID}
+      - AIRFLOW_GID=${AIRFLOW_GID}
+      - AIRFLOW_ADMIN_USERNAME=${AIRFLOW_ADMIN_USERNAME}
+      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD}
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
@@ -90,14 +116,22 @@ services:
     command:
       - -c
       - |
-        airflow db migrate &&
-        airflow users create \
-          --username ${AIRFLOW_ADMIN_USERNAME} \
-          --password ${AIRFLOW_ADMIN_PASSWORD} \
-          --firstname Admin \
-          --lastname User \
-          --role Admin \
-          --email admin@example.com || true
+        chown -R "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}" \
+          /opt/airflow/dags /opt/airflow/logs /opt/airflow/plugins
+        chmod -R u+rwX,g+rwX /opt/airflow/dags /opt/airflow/logs /opt/airflow/plugins
+        # Drop privileges back to airflow before running CLI commands so
+        # any new state files (config, .pyc caches) land with the same
+        # uid the scheduler/webserver use.
+        exec su -p airflow -c '
+          airflow db migrate &&
+          airflow users create \
+            --username "$$AIRFLOW_ADMIN_USERNAME" \
+            --password "$$AIRFLOW_ADMIN_PASSWORD" \
+            --firstname Admin \
+            --lastname User \
+            --role Admin \
+            --email admin@example.com || true
+        '
     networks:
       - velib_network
     restart: on-failure
@@ -118,7 +152,29 @@ services:
     - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
     - AIRFLOW__CORE__LOAD_EXAMPLES=False
-    - _PIP_ADDITIONAL_REQUIREMENTS=docker
+    - _PIP_ADDITIONAL_REQUIREMENTS=docker apache-airflow-providers-google
+    # Cloud plumbing: GCP hooks use GOOGLE_APPLICATION_CREDENTIALS for ADC,
+    # DAG branching reads PIPELINE_TARGET. Empty defaults keep local mode
+    # unchanged — no Google SDK is called unless is_cloud() returns true.
+    - PIPELINE_TARGET=${PIPELINE_TARGET:-local}
+    - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcp/service_account.json
+    - GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
+    - GCP_REGION=${GCP_REGION:-europe-west1}
+    - GCP_BRONZE_BUCKET=${GCP_BRONZE_BUCKET:-}
+    - GCP_BIGQUERY_SILVER_DATASET=${GCP_BIGQUERY_SILVER_DATASET:-velib_silver}
+    - GCP_BIGQUERY_GOLD_DATASET=${GCP_BIGQUERY_GOLD_DATASET:-velib_gold}
+    # Identity that Dataproc Serverless uses to execute the batch. When
+    # empty, the batch falls back to the Compute Engine default SA and
+    # the keyfile SA needs iam.serviceAccountUser on it — which it does
+    # not have by default. Setting it to velib-pipeline-sa routes the
+    # batch through the SA we already provision in terraform.
+    - GCP_DATAPROC_SERVICE_ACCOUNT=${GCP_DATAPROC_SERVICE_ACCOUNT:-}
+    # Airflow Connection bootstrapped from env so GCSHook()/BigQueryHook()
+    # resolve a valid google_cloud_default without manual CLI setup. Encoded
+    # URI form; the key_path and project are plumbed from the same vars as
+    # ADC so both auth paths agree. In local mode the keyfile points to
+    # /dev/null and is never opened because is_cloud() short-circuits first.
+    - AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT=google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fetc%2Fgcp%2Fservice_account.json&extra__google_cloud_platform__project=${GCP_PROJECT_ID:-}
     volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
@@ -126,6 +182,9 @@ services:
     - ./data_lake:/opt/airflow/data_lake
     - ./spark_jobs:/opt/airflow/spark_jobs
     - /var/run/docker.sock:/var/run/docker.sock
+    # Keyfile mount used by GOOGLE_APPLICATION_CREDENTIALS. Falls back to
+    # /dev/null in local mode so compose never fails on a missing host path.
+    - ${GCP_SERVICE_ACCOUNT_KEY:-/dev/null}:/etc/gcp/service_account.json:ro
     command: scheduler
     networks:
       - velib_network
@@ -148,7 +207,29 @@ services:
     - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
     - AIRFLOW__CORE__LOAD_EXAMPLES=False
-    - _PIP_ADDITIONAL_REQUIREMENTS=docker
+    - _PIP_ADDITIONAL_REQUIREMENTS=docker apache-airflow-providers-google
+    # Cloud plumbing: GCP hooks use GOOGLE_APPLICATION_CREDENTIALS for ADC,
+    # DAG branching reads PIPELINE_TARGET. Empty defaults keep local mode
+    # unchanged — no Google SDK is called unless is_cloud() returns true.
+    - PIPELINE_TARGET=${PIPELINE_TARGET:-local}
+    - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcp/service_account.json
+    - GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
+    - GCP_REGION=${GCP_REGION:-europe-west1}
+    - GCP_BRONZE_BUCKET=${GCP_BRONZE_BUCKET:-}
+    - GCP_BIGQUERY_SILVER_DATASET=${GCP_BIGQUERY_SILVER_DATASET:-velib_silver}
+    - GCP_BIGQUERY_GOLD_DATASET=${GCP_BIGQUERY_GOLD_DATASET:-velib_gold}
+    # Identity that Dataproc Serverless uses to execute the batch. When
+    # empty, the batch falls back to the Compute Engine default SA and
+    # the keyfile SA needs iam.serviceAccountUser on it — which it does
+    # not have by default. Setting it to velib-pipeline-sa routes the
+    # batch through the SA we already provision in terraform.
+    - GCP_DATAPROC_SERVICE_ACCOUNT=${GCP_DATAPROC_SERVICE_ACCOUNT:-}
+    # Airflow Connection bootstrapped from env so GCSHook()/BigQueryHook()
+    # resolve a valid google_cloud_default without manual CLI setup. Encoded
+    # URI form; the key_path and project are plumbed from the same vars as
+    # ADC so both auth paths agree. In local mode the keyfile points to
+    # /dev/null and is never opened because is_cloud() short-circuits first.
+    - AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT=google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fetc%2Fgcp%2Fservice_account.json&extra__google_cloud_platform__project=${GCP_PROJECT_ID:-}
     volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
@@ -156,6 +237,8 @@ services:
     - ./data_lake:/opt/airflow/data_lake
     - ./spark_jobs:/opt/airflow/spark_jobs
     - /var/run/docker.sock:/var/run/docker.sock
+    # Same keyfile mount as airflow-scheduler.
+    - ${GCP_SERVICE_ACCOUNT_KEY:-/dev/null}:/etc/gcp/service_account.json:ro
     ports:
     - "8081:8080"
     command: webserver

@@ -1,0 +1,16 @@
+project_id         = "velib-analytics-xxxxx"
+region             = "europe-west1"
+environment        = "dev"
+bronze_bucket_name = "velib-bronze-velib-analytics-xxxxx"
+silver_dataset_id  = "velib_silver"
+gold_dataset_id    = "velib_gold"
+service_account_id = "velib-pipeline-sa"
+
+labels = {
+  project    = "velib"
+  managed_by = "terraform"
+}
+
+# Leave empty to skip the impersonation binding. Otherwise use an IAM
+# principal like "user:you@example.com" or "group:data@example.com".
+operator_principal = ""

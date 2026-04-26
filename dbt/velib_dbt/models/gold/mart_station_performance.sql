@@ -33,22 +33,22 @@ summary as (
         max(d.snapshot_date) as last_data_date,
 
         -- Central availability metrics
-        round(avg(d.avg_occupancy_rate)::numeric, 2) as avg_occupancy_rate,
-        round(avg(d.avg_service_rate)::numeric, 2) as avg_service_rate,
-        round(avg(d.avg_bikes_available)::numeric, 2) as avg_bikes_available,
-        round(avg(d.avg_docks_available)::numeric, 2) as avg_docks_available,
+        round({{ numeric_cast('avg(d.avg_occupancy_rate)') }}, 2) as avg_occupancy_rate,
+        round({{ numeric_cast('avg(d.avg_service_rate)') }}, 2) as avg_service_rate,
+        round({{ numeric_cast('avg(d.avg_bikes_available)') }}, 2) as avg_bikes_available,
+        round({{ numeric_cast('avg(d.avg_docks_available)') }}, 2) as avg_docks_available,
 
         -- Reliability
-        round(avg(d.daily_operational_pct)::numeric, 2) as avg_operational_pct,
+        round({{ numeric_cast('avg(d.daily_operational_pct)') }}, 2) as avg_operational_pct,
 
         -- Stress
-        round(avg(d.pct_time_empty)::numeric, 2) as avg_pct_time_empty,
-        round(avg(d.pct_time_full)::numeric, 2) as avg_pct_time_full,
+        round({{ numeric_cast('avg(d.pct_time_empty)') }}, 2) as avg_pct_time_empty,
+        round({{ numeric_cast('avg(d.pct_time_full)') }}, 2) as avg_pct_time_full,
         sum(d.total_minutes_empty) as total_minutes_empty,
         sum(d.total_minutes_full) as total_minutes_full,
 
         -- Peak behaviour
-        round(avg(d.peak_hourly_occupancy)::numeric, 2) as avg_peak_hourly_occupancy,
+        round({{ numeric_cast('avg(d.peak_hourly_occupancy)') }}, 2) as avg_peak_hourly_occupancy,
 
         current_timestamp as dbt_updated_at
 

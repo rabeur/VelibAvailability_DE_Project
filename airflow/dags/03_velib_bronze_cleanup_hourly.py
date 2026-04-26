@@ -5,11 +5,12 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from airflow import DAG
+import pyarrow.parquet as pq
 from airflow.operators.python import PythonOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
-import pyarrow.parquet as pq
+from utils.pipeline_target import is_cloud
 
+from airflow import DAG
 
 SNAPSHOT_RE = re.compile(r"^snapshot_(\d{8})_(\d{6})\.parquet$")
 
@@ -39,6 +40,17 @@ def is_parquet_valid(path: Path) -> tuple[bool, str | None]:
 
 
 def cleanup_previous_hour_partition(**context):
+    # Cloud mode uploads the Bronze snapshot straight after local validation
+    # in the ingestion DAG, so every parquet landed in GCS is already proven
+    # readable. Duplicates within the same minute are handled by the Silver
+    # writer's dropDuplicates on (station_id, snapshot_timestamp), and long
+    # term retention is enforced by the GCS bucket lifecycle rules. That
+    # makes this local cleanup pass redundant when PIPELINE_TARGET=cloud.
+    if is_cloud():
+        print("⏭️  PIPELINE_TARGET=cloud, skipping local Bronze cleanup")
+        context["ti"].xcom_push(key="skipped", value=True)
+        return
+
     dt = context["data_interval_end"].in_timezone("Europe/Paris").subtract(hours=1)
     date = dt.format("YYYY-MM-DD")
     hour = dt.format("HH")
@@ -128,7 +140,7 @@ DEFAULT_ARGS = {
 
 
 with DAG(
-    dag_id="velib_bronze_cleanup_hourly",
+    dag_id="03_velib_bronze_cleanup_hourly",
     default_args=DEFAULT_ARGS,
     description="Cleanup hourly bronze parquet partition before silver transformation",
     schedule_interval="@hourly",
@@ -144,7 +156,7 @@ with DAG(
 
     trigger_silver_task = TriggerDagRunOperator(
         task_id="trigger_silver_transformation",
-        trigger_dag_id="velib_silver_transformation_hourly",
+        trigger_dag_id="04_velib_silver_transformation_hourly",
         wait_for_completion=False,
         reset_dag_run=False,
     )

@@ -34,8 +34,19 @@ dbt/velib_dbt/package-lock.yml
 logs/
 
 # Claude Code local settings (settings.json est partageable, mcp.json non)
-.claude/mcp.json
+.mcp.json
 .claude/cache/
 .claude/sessions/
 
 # .claude/settings.json est commité (config partageable de l'équipe)
+
+# Cloud / GCP (secrets et état local non partagé)
+.env.cloud
+cloud/terraform/.terraform/
+cloud/terraform/*.tfstate
+cloud/terraform/*.tfstate.*
+cloud/terraform/terraform.tfvars
+cloud/terraform/crash.log
+# Service account keys — ne jamais commiter
+**/velib-pipeline-sa*.json
+**/*-sa.json

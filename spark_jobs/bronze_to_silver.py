@@ -28,8 +28,6 @@ from pyspark.sql.functions import (
     expr,
     upper,
     udf,
-    min as spark_min,
-    max as spark_max,
 )
 from pyspark.sql.types import *
 from datetime import datetime
@@ -39,6 +37,7 @@ import logging
 from typing import Optional
 
 from paris_arrondissement_utils import get_paris_arrondissement_label
+from silver_writers import BigQuerySilverWriter, PostgresSilverWriter, SilverWriter
 
 # Logging configuration
 logging.basicConfig(
@@ -65,41 +64,54 @@ def enrich_paris_district_name(
     return arrondissement or normalized_name
 
 
-class VelibBronzeToSilver:
+def create_spark_session(pipeline_target: str = "local") -> SparkSession:
+    """Build a Spark session tuned for the requested target.
+
+    On `local`, add the PostgreSQL JDBC driver and cap driver/executor
+    memory to sane local-container defaults. On `cloud`, stay minimal:
+    Dataproc Serverless ships the GCS and BigQuery connectors, and sizing
+    is controlled at batch submission time, not in the session config.
     """
-    Bronze -> Silver transformation pipeline for Velib data
-    """
+    logger.info(f"🚀 Creating Spark session (target={pipeline_target})...")
 
-    def __init__(self, postgres_config: dict):
-        """
-        Initialize the pipeline
+    builder = (
+        SparkSession.builder.appName("VelibBronzeToSilver")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
+        .config("spark.sql.shuffle.partitions", "10")
+        .config("spark.sql.session.timeZone", "Europe/Paris")
+    )
 
-        Args:
-            postgres_config: PostgreSQL configuration (host, port, db, user, password)
-        """
-        self.postgres_config = postgres_config
-        self.spark = self._create_spark_session()
-
-    def _create_spark_session(self) -> SparkSession:
-        """Create a configured Spark session"""
-        logger.info("🚀 Creating Spark session...")
-
-        spark = (
-            SparkSession.builder.appName("VelibBronzeToSilver")
-            .config("spark.jars", "/opt/spark/jars/postgresql-42.7.1.jar")
-            .config("spark.sql.adaptive.enabled", "true")
-            .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
-            .config("spark.sql.shuffle.partitions", "10")
-            .config("spark.sql.session.timeZone", "Europe/Paris")
+    if pipeline_target == "local":
+        builder = (
+            builder.config("spark.jars", "/opt/spark/jars/postgresql-42.7.1.jar")
             .config("spark.driver.memory", "2g")
             .config("spark.executor.memory", "2g")
-            .getOrCreate()
         )
 
-        spark.sparkContext.setLogLevel("WARN")
+    spark = builder.getOrCreate()
+    spark.sparkContext.setLogLevel("WARN")
+    logger.info(f"✅ Spark version: {spark.version}")
+    return spark
 
-        logger.info(f"✅ Spark version: {spark.version}")
-        return spark
+
+class VelibBronzeToSilver:
+    """
+    Bronze -> Silver transformation pipeline for Velib data.
+
+    The class owns the transformation logic; the destination-specific
+    I/O is delegated to a SilverWriter so the same pipeline can run
+    against PostgreSQL (local) or BigQuery (cloud).
+    """
+
+    def __init__(self, spark: SparkSession, silver_writer: SilverWriter):
+        """
+        Args:
+            spark: Pre-configured Spark session (see create_spark_session).
+            silver_writer: Destination-aware writer (Postgres or BigQuery).
+        """
+        self.spark = spark
+        self.silver_writer = silver_writer
 
     def read_bronze_data(self, bronze_path: str, date_filter: str = None, hour_filter: str = None):
         """
@@ -384,165 +396,6 @@ class VelibBronzeToSilver:
 
         return df_availability
 
-    def write_to_postgres(self, df, table_name: str, mode: str = "append"):
-        """
-        Write to PostgreSQL with error handling
-
-        Args:
-            df: DataFrame Spark
-            table_name: Table name (schema.table)
-            mode: Write mode ("append", "overwrite")
-        """
-        logger.info(f"💾 Writing to PostgreSQL: {table_name} (mode={mode})")
-
-        jdbc_url = f"jdbc:postgresql://{self.postgres_config['host']}:{self.postgres_config['port']}/{self.postgres_config['database']}"
-
-        jdbc_properties = {
-            "user": self.postgres_config["user"],
-            "password": self.postgres_config["password"],
-            "driver": "org.postgresql.Driver",
-            "batchsize": "5000",
-            "isolationLevel": "READ_COMMITTED",
-        }
-
-        try:
-            df.write.jdbc(url=jdbc_url, table=table_name, mode=mode, properties=jdbc_properties)
-
-            row_count = df.count()
-            logger.info(f"✅ {row_count:,} rows written to {table_name}")
-
-        except Exception as e:
-            logger.error(f"❌ Write error for {table_name}: {e}")
-            raise
-
-    def write_availability_with_dedup(self, df_availability):
-        """
-        Write availability facts while ignoring rows that already exist in
-        silver.station_availability (same station_id + snapshot_timestamp).
-
-        This prevents the full batch from failing when a subset of rows
-        has already been ingested.
-        """
-        logger.info("🛡️  Duplicate-safe write for silver.station_availability...")
-
-        # 1) Remove duplicates inside the incoming Spark batch itself
-        incoming_count = df_availability.count()
-        df_dedup_incoming = df_availability.dropDuplicates(["station_id", "snapshot_timestamp"])
-        dedup_incoming_count = df_dedup_incoming.count()
-        dropped_incoming = incoming_count - dedup_incoming_count
-
-        if dropped_incoming > 0:
-            logger.warning(f"  ⚠️  {dropped_incoming:,} duplicate rows removed from incoming batch")
-
-        if dedup_incoming_count == 0:
-            logger.info("  ✅ No availability rows to insert after in-batch dedup")
-            return
-
-        # 2) Restrict existing-key lookup to the current batch time range
-        ts_bounds = df_dedup_incoming.agg(
-            spark_min("snapshot_timestamp").alias("min_ts"),
-            spark_max("snapshot_timestamp").alias("max_ts"),
-        ).collect()[0]
-
-        min_ts = ts_bounds["min_ts"]
-        max_ts = ts_bounds["max_ts"]
-
-        if min_ts is None or max_ts is None:
-            logger.info("  ✅ No valid timestamps to insert")
-            return
-
-        min_ts_str = min_ts.strftime("%Y-%m-%d %H:%M:%S.%f")
-        max_ts_str = max_ts.strftime("%Y-%m-%d %H:%M:%S.%f")
-
-        jdbc_url = f"jdbc:postgresql://{self.postgres_config['host']}:{self.postgres_config['port']}/{self.postgres_config['database']}"
-        jdbc_properties = {
-            "user": self.postgres_config["user"],
-            "password": self.postgres_config["password"],
-            "driver": "org.postgresql.Driver",
-        }
-
-        existing_keys_query = f"""
-            (
-                SELECT station_id, snapshot_timestamp
-                FROM silver.station_availability
-                WHERE snapshot_timestamp >= TIMESTAMP '{min_ts_str}'
-                  AND snapshot_timestamp <= TIMESTAMP '{max_ts_str}'
-            ) existing_keys
-        """
-
-        df_existing_keys = self.spark.read.jdbc(
-            url=jdbc_url, table=existing_keys_query, properties=jdbc_properties
-        )
-
-        # 3) Keep only rows not already in PostgreSQL
-        df_to_insert = df_dedup_incoming.join(
-            df_existing_keys, on=["station_id", "snapshot_timestamp"], how="left_anti"
-        )
-
-        to_insert_count = df_to_insert.count()
-        skipped_existing = dedup_incoming_count - to_insert_count
-
-        if skipped_existing > 0:
-            logger.warning(
-                f"  ⚠️  {skipped_existing:,} rows skipped (already present in PostgreSQL)"
-            )
-
-        if to_insert_count == 0:
-            logger.info("  ✅ Nothing new to insert into silver.station_availability")
-            return
-
-        self.write_to_postgres(df_to_insert, "silver.station_availability", mode="append")
-        logger.info(f"✅ Duplicate-safe write completed: {to_insert_count:,} new rows inserted")
-
-    def upsert_stations(self, df_new_stations):
-        """
-        Upsert stations: update last_seen_at for existing stations,
-        insert new ones
-
-        Note: A true SCD Type 2 would require more sophisticated logic
-        """
-        logger.info("🔄 Upserting stations...")
-
-        # Read existing stations
-        jdbc_url = f"jdbc:postgresql://{self.postgres_config['host']}:{self.postgres_config['port']}/{self.postgres_config['database']}"
-
-        jdbc_properties = {
-            "user": self.postgres_config["user"],
-            "password": self.postgres_config["password"],
-            "driver": "org.postgresql.Driver",
-        }
-
-        try:
-            df_existing = self.spark.read.jdbc(
-                jdbc_url, "silver.stations", properties=jdbc_properties
-            )
-
-            existing_count = df_existing.count()
-            logger.info(f"  📊 {existing_count:,} existing stations in the database")
-
-            # Identify new stations
-            df_new = df_new_stations.join(
-                df_existing.select("station_id"),
-                "station_id",
-                "left_anti",  # Keep only stations that do not already exist
-            )
-
-            new_count = df_new.count()
-
-            if new_count > 0:
-                logger.info(f"  ➕ {new_count} new stations to insert")
-                self.write_to_postgres(df_new, "silver.stations", mode="append")
-            else:
-                logger.info("  ✅ No new station")
-
-            # For existing stations, last_seen_at could be updated
-            # with an SQL UPDATE query (omitted here for simplicity)
-
-        except Exception as e:
-            # If the table does not exist yet, insert everything
-            logger.warning("  ⚠️  Stations table empty or missing, performing full insert")
-            self.write_to_postgres(df_new_stations, "silver.stations", mode="append")
-
     def run(self, bronze_path: str, date_filter: str = None, hour_filter: str = None):
         """
         Run the full Bronze -> Silver pipeline
@@ -569,13 +422,9 @@ class VelibBronzeToSilver:
             df_stations = self.extract_stations_dimension(df_silver)
             df_availability = self.extract_availability_facts(df_silver)
 
-            # 4. Write to PostgreSQL
-
-            # Stations (upsert to avoid duplicates)
-            self.upsert_stations(df_stations)
-
-            # Availability (append while skipping already-existing keys)
-            self.write_availability_with_dedup(df_availability)
+            # 4. Write through the destination-aware writer
+            self.silver_writer.write_stations(df_stations)
+            self.silver_writer.write_availability(df_availability)
 
             duration = (datetime.now() - start_time).total_seconds()
 
@@ -607,20 +456,109 @@ class VelibBronzeToSilver:
             self.spark.stop()
 
 
+def _build_silver_writer(spark: SparkSession, pipeline_target: str) -> SilverWriter:
+    """Pick the right writer for the requested target and fail fast on bad config."""
+    if pipeline_target == "local":
+        postgres_config = {
+            "host": os.getenv("POSTGRES_HOST", "postgres"),
+            "port": os.getenv("POSTGRES_PORT", "5432"),
+            "database": os.getenv("POSTGRES_DB", "velib_dw"),
+            "user": os.getenv("POSTGRES_USER", "velib"),
+            "password": os.getenv("POSTGRES_PASSWORD", "velib"),
+        }
+        return PostgresSilverWriter(spark, postgres_config)
+
+    if pipeline_target == "cloud":
+        project_id = os.getenv("GCP_PROJECT_ID")
+        dataset_id = os.getenv("GCP_BIGQUERY_SILVER_DATASET", "velib_silver")
+        temp_bucket = os.getenv("GCP_BQ_TEMP_BUCKET") or os.getenv("GCP_BRONZE_BUCKET")
+
+        missing = [
+            name
+            for name, value in (
+                ("GCP_PROJECT_ID", project_id),
+                ("GCP_BQ_TEMP_BUCKET or GCP_BRONZE_BUCKET", temp_bucket),
+            )
+            if not value
+        ]
+        if missing:
+            raise RuntimeError(
+                "PIPELINE_TARGET=cloud requires the following env vars: " + ", ".join(missing)
+            )
+
+        return BigQuerySilverWriter(
+            spark,
+            {"project_id": project_id, "dataset_id": dataset_id, "temp_bucket": temp_bucket},
+        )
+
+    raise ValueError(f"Unknown PIPELINE_TARGET: {pipeline_target!r} (expected 'local' or 'cloud')")
+
+
+def _default_bronze_path(pipeline_target: str) -> str:
+    """Path default for each target. Cloud reads the bucket from env, local uses the mounted path."""
+    if pipeline_target == "cloud":
+        bucket = os.getenv("GCP_BRONZE_BUCKET")
+        if not bucket:
+            raise RuntimeError("PIPELINE_TARGET=cloud requires GCP_BRONZE_BUCKET to be set")
+        return f"gs://{bucket}/bronze/velib"
+    return "/opt/data_lake/bronze/velib"
+
+
 def main():
-    """Script entry point"""
+    """Script entry point.
 
-    # PostgreSQL configuration (adjust as needed)
-    postgres_config = {
-        "host": os.getenv("POSTGRES_HOST", "postgres"),
-        "port": os.getenv("POSTGRES_PORT", "5432"),
-        "database": os.getenv("POSTGRES_DB", "velib_dw"),
-        "user": os.getenv("POSTGRES_USER", "velib"),
-        "password": os.getenv("POSTGRES_PASSWORD", "velib"),
+    Selecting the target:
+      - PIPELINE_TARGET=local (default): reads local Parquet, writes to PostgreSQL.
+      - PIPELINE_TARGET=cloud: reads Parquet from gs://, writes to BigQuery via the
+        Spark BigQuery connector.
+
+    CLI contract is unchanged:
+      spark-submit bronze_to_silver.py <date_filter> [hour_filter]
+      spark-submit bronze_to_silver.py <bronze_path> <date_filter> [hour_filter]
+    If <bronze_path> is omitted, the target-appropriate default is used.
+    """
+    args = sys.argv[1:]
+
+    pipeline_target = None
+    if args:
+        first_arg = args[0].lower()
+        if first_arg in {"local", "cloud"}:
+            pipeline_target = first_arg
+            args = args[1:]
+        elif first_arg.startswith("--target="):
+            pipeline_target = first_arg.split("=", 1)[1].lower()
+            args = args[1:]
+        elif first_arg.startswith("--pipeline-target="):
+            pipeline_target = first_arg.split("=", 1)[1].lower()
+            args = args[1:]
+
+    pipeline_target = pipeline_target or os.getenv("PIPELINE_TARGET", "local").lower()
+    os.environ["PIPELINE_TARGET"] = pipeline_target
+
+    # Dataproc Serverless does not reliably propagate spark.driverEnv.* into
+    # the driver process environment, so the DAG forwards GCP config as
+    # named CLI overrides and we inject them into os.environ here. The rest
+    # of the script (writer factory, _default_bronze_path) keeps reading env
+    # vars unchanged, so local invocation paths are not affected.
+    _named_to_env = {
+        "--bronze-bucket": "GCP_BRONZE_BUCKET",
+        "--gcp-project": "GCP_PROJECT_ID",
+        "--silver-dataset": "GCP_BIGQUERY_SILVER_DATASET",
+        "--temp-bucket": "GCP_BQ_TEMP_BUCKET",
     }
+    _remaining: list[str] = []
+    for _a in args:
+        _matched = False
+        for _prefix, _env in _named_to_env.items():
+            if _a.startswith(_prefix + "="):
+                os.environ[_env] = _a.split("=", 1)[1]
+                _matched = True
+                break
+        if not _matched:
+            _remaining.append(_a)
+    args = _remaining
 
-    # Default paths
-    default_bronze_path = "/opt/data_lake/bronze/velib"
+    default_bronze_path = _default_bronze_path(pipeline_target)
 
     # Flexible argument parsing
     # Supported invocation modes:
@@ -628,7 +566,6 @@ def main():
     # 2) spark-submit bronze_to_silver.py 2026-02-26 14
     # 3) spark-submit bronze_to_silver.py /path/to/bronze 2026-02-26
     # 4) spark-submit bronze_to_silver.py /path/to/bronze 2026-02-26 14
-    args = sys.argv[1:]
 
     if len(args) == 0:
         print("Usage: spark-submit bronze_to_silver.py [bronze_path] <date_filter> [hour_filter]")
@@ -668,16 +605,17 @@ def main():
         print("Error: date_filter is required (YYYY-MM-DD)")
         sys.exit(1)
 
+    logger.info(f"🎯 Pipeline target: {pipeline_target}")
     logger.info(f"📂 Bronze path: {bronze_path}")
     logger.info(f"📅 Processing date: {date_filter}")
     if hour_filter:
         logger.info(f"⏰ Processing hour: {hour_filter}")
 
-    # Create and run the pipeline
-    pipeline = VelibBronzeToSilver(postgres_config)
+    spark = create_spark_session(pipeline_target)
+    writer = _build_silver_writer(spark, pipeline_target)
+    pipeline = VelibBronzeToSilver(spark, writer)
     result = pipeline.run(bronze_path, date_filter, hour_filter)
 
-    # Exit code
     sys.exit(0 if result["success"] else 1)
 
 

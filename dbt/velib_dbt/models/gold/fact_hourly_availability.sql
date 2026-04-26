@@ -1,8 +1,22 @@
+{#
+    BigQuery does not support delete+insert; merge is the atomic
+    equivalent. It only stays cheap when paired with partition_by,
+    otherwise MERGE scans the whole table on each run. dbt's config()
+    parser does not evaluate inline ternaries, so we precompute the
+    target-specific values via {% set %} blocks.
+#}
+{%- set is_bq = target.type == 'bigquery' -%}
+{%- set inc_strategy = 'merge' if is_bq else 'delete+insert' -%}
+{%- set partition_cfg = {'field': 'snapshot_date', 'data_type': 'date'} if is_bq else none -%}
+{%- set cluster_cfg = ['station_id'] if is_bq else none -%}
+
 {{
     config(
-        materialized      = 'incremental',
-        unique_key        = ['station_id', 'snapshot_date', 'snapshot_hour'],
-        incremental_strategy = 'delete+insert'
+        materialized         = 'incremental',
+        unique_key           = ['station_id', 'snapshot_date', 'snapshot_hour'],
+        incremental_strategy = inc_strategy,
+        partition_by         = partition_cfg,
+        cluster_by           = cluster_cfg
     )
 }}
 
@@ -11,8 +25,10 @@ with availability as (
     select * from {{ ref('stg_station_availability') }}
 
     {% if is_incremental() %}
-    -- On incremental runs: reprocess the last 2 days to absorb late-arriving data
-        where snapshot_date >= (select max(snapshot_date) - interval '1 day' from {{ this }})
+    -- On incremental runs: reprocess the last 2 days to absorb late-arriving
+    -- data. The incremental_lookback macro coalesces an empty target table to
+    -- a 1900-01-01 floor so we don't silently no-op on a re-bootstrapped run.
+        where snapshot_date >= (select {{ incremental_lookback('snapshot_date', 1) }} from {{ this }})
     {% endif %}
 
 ),
@@ -29,15 +45,15 @@ hourly_agg as (
         count(*) as num_snapshots,
 
         -- Bike counts
-        round(avg(num_bikes_available)::numeric, 2) as avg_bikes_available,
-        round(avg(num_bikes_available_mechanical)::numeric, 2) as avg_bikes_mechanical,
-        round(avg(num_bikes_available_ebike)::numeric, 2) as avg_bikes_ebike,
-        round(avg(num_docks_available)::numeric, 2) as avg_docks_available,
+        round({{ numeric_cast('avg(num_bikes_available)') }}, 2) as avg_bikes_available,
+        round({{ numeric_cast('avg(num_bikes_available_mechanical)') }}, 2) as avg_bikes_mechanical,
+        round({{ numeric_cast('avg(num_bikes_available_ebike)') }}, 2) as avg_bikes_ebike,
+        round({{ numeric_cast('avg(num_docks_available)') }}, 2) as avg_docks_available,
 
         -- Rates
-        round(avg(occupancy_rate)::numeric, 2) as avg_occupancy_rate,
-        round(avg(availability_rate)::numeric, 2) as avg_availability_rate,
-        round(avg(service_rate)::numeric, 2) as avg_service_rate,
+        round({{ numeric_cast('avg(occupancy_rate)') }}, 2) as avg_occupancy_rate,
+        round({{ numeric_cast('avg(availability_rate)') }}, 2) as avg_availability_rate,
+        round({{ numeric_cast('avg(service_rate)') }}, 2) as avg_service_rate,
 
         -- Peak / trough within the hour
         max(num_bikes_available) as peak_bikes_available,

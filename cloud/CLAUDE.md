@@ -6,7 +6,7 @@ le complète pour tout ce qui concerne le dossier `cloud/`.
 
 ## Spec d'architecture complète
 
-@docs/architecture_cible.md
+@docs/architecture_target.md
 
 ## Périmètre et règles de ce dossier
 
@@ -26,10 +26,11 @@ cloud/
 ├── terraform/          # IaC complet (gcs, bigquery, dataproc, iam)
 ├── scripts/            # scripts bash pour déploiement et tests manuels
 ├── docs/               # documentation et specs
-│   ├── architecture_cible.md   # spec migration GCP (ce fichier est importé)
-│   ├── setup.md                # guide de mise en route GCP (à créer)
-│   └── cost_management.md      # budgets et alertes (à créer)
-└── README.md           # README spécifique au chantier cloud (à créer)
+│   ├── architecture_target.md   # spec migration GCP (ce fichier est importé)
+│   ├── architecture.md          # diagramme mermaid de la cible
+│   ├── setup.md                 # guide de mise en route GCP
+│   └── cost_management.md       # budgets et alertes
+└── README.md           # README spécifique au chantier cloud
 ```
 
 ## Checklist avant tout terraform apply

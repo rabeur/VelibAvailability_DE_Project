@@ -159,7 +159,7 @@ def generate_alert(**context):
 
 # DAG definition
 with DAG(
-    "velib_data_quality",
+    "02_velib_data_quality",
     default_args=default_args,
     description="Data Quality checks for Vélib data",
     schedule_interval="0/1 * * * *",  # Every minutes cause velib data are updated every minute

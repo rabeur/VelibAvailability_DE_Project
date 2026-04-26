@@ -12,9 +12,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-DEFAULT_GEOJSON_PATH = (
-    Path(__file__).resolve().parent / "data" / "paris_arrondissements.geojson"
+# Repo / Docker layout keeps the geojson under a `data/` subfolder. On
+# Dataproc Serverless workers, file_uris land flat next to this module,
+# so we resolve at call time across both candidates.
+_GEOJSON_FILENAME = "paris_arrondissements.geojson"
+_GEOJSON_CANDIDATES = (
+    Path(__file__).resolve().parent / "data" / _GEOJSON_FILENAME,
+    Path(__file__).resolve().parent / _GEOJSON_FILENAME,
 )
+DEFAULT_GEOJSON_PATH = _GEOJSON_CANDIDATES[0]
 
 
 def _format_arrondissement_label(arr_number: int) -> str:
@@ -25,7 +31,13 @@ def _format_arrondissement_label(arr_number: int) -> str:
 @lru_cache(maxsize=1)
 def load_arrondissement_boundaries(geojson_path: Optional[str] = None) -> tuple[dict, ...]:
     """Load Paris arrondissement polygons from the local GeoJSON file."""
-    path = Path(geojson_path) if geojson_path else DEFAULT_GEOJSON_PATH
+    if geojson_path is not None:
+        path = Path(geojson_path)
+    else:
+        path = next(
+            (candidate for candidate in _GEOJSON_CANDIDATES if candidate.exists()),
+            DEFAULT_GEOJSON_PATH,
+        )
 
     with path.open("r", encoding="utf-8") as file_handle:
         geojson = json.load(file_handle)

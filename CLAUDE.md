@@ -104,7 +104,8 @@ impacts coûts). Pas de tirets cadratins dans les livrables publiés
 Lire ces fichiers pour le contexte technique complet :
 - `README.md` : vue d'ensemble du pipeline local
 - `cloud/docs/architecture_target.md` : spec détaillée de la migration GCP (chargée automatiquement dans cloud/)
-- `docs/diagrams/architecture_diagram.png` : diagramme local
+- `docs/diagrams/local_architecture_diagram.png` : diagramme local
+- `docs/diagrams/cloud_architecture_diagram.png` : diagramme cloud GCP
 - `cloud/docs/architecture.md` : diagramme cloud (mermaid)
 
 ## Do's

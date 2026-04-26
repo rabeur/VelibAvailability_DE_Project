@@ -160,16 +160,16 @@ plain `make up` always runs local mode regardless of what sits in
 In the Airflow UI (http://localhost:8081), unpause and trigger the
 DAGs in this order:
 
-1. `velib_ingestion_pipeline` — writes minute-level snapshots to
+1. `01_velib_ingestion_pipeline` — writes minute-level snapshots to
    `gs://<bronze>/bronze/velib/...`
-2. `velib_data_quality` — produces a CSV report in
+2. `02_velib_data_quality` — produces a CSV report in
    `gs://<bronze>/reports/data_quality/...`
-3. `velib_bronze_cleanup_hourly` — auto-triggers the Silver DAG once
+3. `03_velib_bronze_cleanup_hourly` — auto-triggers the Silver DAG once
    the previous hour partition is clean
-4. `velib_silver_transformation_hourly` — submits a Dataproc Serverless
+4. `04_velib_silver_transformation_hourly` — submits a Dataproc Serverless
    batch named `velib-silver-YYYYMMDD-HH-XXXXXX` and validates the
    resulting BigQuery rows
-5. `velib_dbt_gold_transformation` — runs dbt staging + gold + tests
+5. `05_velib_dbt_gold_transformation` — runs dbt staging + gold + tests
    on BigQuery via the `bigquery_cloud` profile
 
 Watch the Dataproc batch in the GCP console (or via

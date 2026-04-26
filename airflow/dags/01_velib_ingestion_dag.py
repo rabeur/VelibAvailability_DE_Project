@@ -270,7 +270,7 @@ def upload_snapshot_to_gcs(**context):
 
 # DAG definition
 with DAG(
-    "velib_ingestion_pipeline",
+    "01_velib_ingestion_pipeline",
     default_args=default_args,
     description="Real-time ingestion of Vélib station availability data with metadata enrichment and partitioned storage",
     schedule_interval="*/1 * * * *",  # every minute

@@ -64,7 +64,7 @@ submission and execution).
 
 ## Relationship with the local diagram
 
-`docs/diagrams/architecture_diagram.png` at the repository root shows the
+`docs/diagrams/local_architecture_diagram.png` at the repository root shows the
 same flow with Postgres + Superset in place of BigQuery + Looker Studio.
 The two diagrams are intentionally isomorphic so the dual-mode DAGs and
 Spark jobs can be audited in parallel.

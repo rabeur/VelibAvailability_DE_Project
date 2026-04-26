@@ -17,25 +17,36 @@ A production-grade, local-first data platform that ingests real-time Vélib' ope
 
 The project was built as the capstone of the [Data Engineering Zoomcamp 2026](https://github.com/DataTalksClub/data-engineering-zoomcamp) by DataTalks Club.
 
-> **Capability snapshot:** [N] Vélib' stations tracked · [N]k snapshots ingested per day · [N] dbt models · [N] GB data lake · hourly Bronze → Silver → Gold refresh
+> **Capability snapshot:** 1,500+ Vélib' stations tracked · ~1.1k snapshots ingested per day · 7 dbt models (5 Gold marts) · 2.5 GB partitioned data lake · hourly Bronze → Silver → Gold refresh
 
 ---
 
 ## Screenshots
 
-> *Placeholder — dashboards, DAGs and lineage screenshots to be added.*
+### Local pipeline
 
 | | |
 |---|---|
-| **Airflow DAGs** | ![Airflow DAGs placeholder](docs/screenshots/airflow-dags.png) |
-| **dbt lineage** | ![dbt lineage placeholder](docs/screenshots/dbt-lineage.png) |
-| **Superset dashboard** | ![Superset dashboard placeholder](docs/screenshots/superset-dashboard.png) |
+| **Superset operational dashboard** | ![Superset overview](docs/screenshots/superset-overview.png) |
+| **Peak hours by district** | ![Superset peak hours](docs/screenshots/superset-peak-hours.png) |
+| **Top stations under stress** | ![Superset station performance](docs/screenshots/superset-station-performance.png) |
+| **Airflow DAGs running on schedule** | ![Airflow grid view](docs/screenshots/airflow-grid.png) |
+
+### Cloud deployment (GCP)
+
+| | |
+|---|---|
+| **BigQuery Silver and Gold datasets** | ![BigQuery datasets](docs/screenshots/bigquery-datasets.png) |
+| **Dataproc Serverless Bronze-to-Silver batch** | ![Dataproc batch](docs/screenshots/dataproc-batch.png) |
+| **Monthly cost under budget** | ![GCP billing](docs/screenshots/gcp-billing.png) |
 
 ---
 
 ## Architecture
 
-![Architecture Diagram](docs/diagrams/architecture_diagram.png)
+![Local Architecture Diagram](docs/diagrams/local_architecture_diagram.png)
+
+![Cloud Architecture Diagram](docs/diagrams/cloud_architecture_diagram.png)
 
 The pipeline follows the medallion architecture pattern with clear separation of concerns:
 
@@ -69,11 +80,11 @@ The platform runs five Airflow DAGs, each with a single, well-defined responsibi
 
 | DAG | Frequency | Purpose |
 |---|---|---|
-| `velib_ingestion_pipeline` | every minute | API extraction, schema enforcement, Bronze write, basic validation |
-| `velib_data_quality` | every minute | Schema, null, duplicate, freshness, range and consistency checks with persisted reports |
-| `velib_bronze_cleanup_hourly` | hourly | Removes corrupted Parquet files and minute-level duplicates from the previous hour partition |
-| `velib_silver_transformation_hourly` | trigger-based | Executes the Spark job, loads Silver tables, validates the output |
-| `velib_dbt_gold_transformation` | daily at 03:00 | Runs dbt deps, staging, gold and tests |
+| `01_velib_ingestion_pipeline` | every minute | API extraction, schema enforcement, Bronze write, basic validation |
+| `02_velib_data_quality` | every minute | Schema, null, duplicate, freshness, range and consistency checks with persisted reports |
+| `03_velib_bronze_cleanup_hourly` | hourly | Removes corrupted Parquet files and minute-level duplicates from the previous hour partition |
+| `04_velib_silver_transformation_hourly` | trigger-based | Executes the Spark job, loads Silver tables, validates the output |
+| `05_velib_dbt_gold_transformation` | daily at 03:00 | Runs dbt deps, staging, gold and tests |
 
 The Spark job itself (`spark_jobs/bronze_to_silver.py`) handles field cleaning, normalization, the three operational metrics and the loading of both the station dimension and the availability facts into PostgreSQL.
 
@@ -153,11 +164,11 @@ localhost.
 
 | DAG | Schedule | Produces |
 |---|---|---|
-| `velib_ingestion_pipeline` | every minute | Parquet snapshot in `data_lake/bronze/velib/` |
-| `velib_data_quality` | every minute | CSV report in `data_lake/reports/data_quality/` |
-| `velib_bronze_cleanup_hourly` | hourly at H+0, scans H−1 | Removes corrupted/duplicate parquets, triggers silver |
-| `velib_silver_transformation_hourly` | triggered by the cleanup | Populates `silver.stations` and `silver.station_availability` |
-| `velib_dbt_gold_transformation` | daily at 03:00 UTC | Builds 5 `gold.*` tables via dbt |
+| `01_velib_ingestion_pipeline` | every minute | Parquet snapshot in `data_lake/bronze/velib/` |
+| `02_velib_data_quality` | every minute | CSV report in `data_lake/reports/data_quality/` |
+| `03_velib_bronze_cleanup_hourly` | hourly at H+0, scans H−1 | Removes corrupted/duplicate parquets, triggers silver |
+| `04_velib_silver_transformation_hourly` | triggered by the cleanup | Populates `silver.stations` and `silver.station_availability` |
+| `05_velib_dbt_gold_transformation` | daily at 03:00 UTC | Builds 5 `gold.*` tables via dbt |
 
 Silver is downstream of a *completed* Bronze hour, so the first Silver
 rows appear about one hour after the first ingestion. To validate the
@@ -254,11 +265,11 @@ runs the local pipeline regardless of what sits in `.env.cloud`.
 
 ## Roadmap
 
-The local platform is complete and operational. The following extensions are actively planned.
+The local platform is complete and operational.
 
-### Cloud deployment on Google Cloud Platform
+### Delivered
 
-The parallel GCP branch is wired end-to-end (Terraform, dual-mode DAGs, dual-adapter dbt container, `make cloud-*` targets). See the [Cloud deployment](#cloud-deployment-gcp-optional) quickstart above and `cloud/README.md` for the full guide.
+**Cloud deployment on Google Cloud Platform.** The parallel GCP branch is wired end-to-end behind a `PIPELINE_TARGET=cloud` switch: Terraform-managed infrastructure (GCS, BigQuery, Dataproc Serverless, IAM), dual-mode Airflow DAGs, a dual-adapter dbt container, and `make cloud-*` targets. The local pipeline runs unchanged. See the [Cloud deployment](#cloud-deployment-gcp-optional) quickstart above and `cloud/README.md` for the full guide.
 
 | Component | Local | GCP target |
 |---|---|---|
@@ -271,6 +282,7 @@ The parallel GCP branch is wired end-to-end (Terraform, dual-mode DAGs, dual-ada
 
 ### Planned
 
+- Looker Studio dashboard mirroring the Superset KPIs (waiting on Silver/Gold history accumulation to make trend visualisations meaningful)
 - CI pipeline for `ruff`, `sqlfluff` and dbt tests
 - Alerting channels (email and Slack) for pipeline incidents
 - KPI dictionary and business glossary

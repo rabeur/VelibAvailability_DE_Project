@@ -140,7 +140,7 @@ DEFAULT_ARGS = {
 
 
 with DAG(
-    dag_id="velib_bronze_cleanup_hourly",
+    dag_id="03_velib_bronze_cleanup_hourly",
     default_args=DEFAULT_ARGS,
     description="Cleanup hourly bronze parquet partition before silver transformation",
     schedule_interval="@hourly",
@@ -156,7 +156,7 @@ with DAG(
 
     trigger_silver_task = TriggerDagRunOperator(
         task_id="trigger_silver_transformation",
-        trigger_dag_id="velib_silver_transformation_hourly",
+        trigger_dag_id="04_velib_silver_transformation_hourly",
         wait_for_completion=False,
         reset_dag_run=False,
     )

@@ -117,7 +117,7 @@ def task_dbt_test(**context):
 # ---------------------------------------------------------------------------
 
 with DAG(
-    dag_id="velib_dbt_gold_transformation",
+    dag_id="05_velib_dbt_gold_transformation",
     default_args=default_args,
     description="Build the Gold analytical layer from Silver data using dbt",
     schedule_interval="0 3 * * *",  # Daily at 03:00 — after Silver pipeline (hourly)

@@ -273,7 +273,7 @@ cloud-deploy-spark: _require-env-cloud
 cloud-run-ingestion: _require-env-cloud
 	$(CLOUD_ENV) && docker compose -f $(COMPOSE_FILE) exec -T \
 		-e PIPELINE_TARGET=cloud \
-		airflow-webserver airflow dags trigger velib_ingestion_pipeline
+		airflow-webserver airflow dags trigger 01_velib_ingestion_pipeline
 
 # dbt run/test against BigQuery. The container must already be built with
 # the dual-adapter image (`make build`) and the keyfile must be mounted.

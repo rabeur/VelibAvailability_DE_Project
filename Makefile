@@ -33,6 +33,7 @@ CLOUD_ENV = set -a && . ./.env.cloud && set +a
 	format-sql lint-sql help \
 	cloud-init cloud-stack-up cloud-plan cloud-up cloud-down cloud-deploy-spark \
 	cloud-run-ingestion cloud-dbt-run cloud-dbt-test cloud-logs cloud-cost \
+	cloud-backfill cloud-backfill-apply \
 	_require-env-cloud _require-tfvars
 
 # Build docker images
@@ -290,6 +291,18 @@ cloud-dbt-test: _require-env-cloud
 cloud-logs: _require-env-cloud
 	$(CLOUD_ENV) && bash $(CLOUD_SCRIPTS_DIR)/run_dataproc_batch.sh --logs-only
 
+# Backfill the local bronze data lake to GCS, then run Bronze->Silver
+# (Dataproc) and Silver->Gold (dbt) only on the days missing in BigQuery.
+# Default: dry-run. Pass extra flags via BACKFILL_ARGS, e.g.:
+#   make cloud-backfill BACKFILL_ARGS="--from=2026-04-01 --skip-gold"
+cloud-backfill: _require-env-cloud
+	bash $(CLOUD_SCRIPTS_DIR)/backfill_local_to_cloud.sh $(BACKFILL_ARGS)
+
+# Same as cloud-backfill but with --apply prepended. Typed confirmations
+# inside the script still gate every cost-bearing step.
+cloud-backfill-apply: _require-env-cloud
+	bash $(CLOUD_SCRIPTS_DIR)/backfill_local_to_cloud.sh --apply $(BACKFILL_ARGS)
+
 # Quick pointer to the billing dashboard. Live cost rollup via CLI needs
 # billing API + org-level perms we don't assume here.
 cloud-cost: _require-env-cloud
@@ -348,5 +361,7 @@ help:
 	@echo "  cloud-dbt-test      : dbt test against BigQuery"
 	@echo "  cloud-logs          : describe the latest Dataproc Serverless batch"
 	@echo "  cloud-cost          : open the billing console for the project"
+	@echo "  cloud-backfill      : dry-run backfill local bronze -> GCS -> BQ silver -> dbt gold"
+	@echo "  cloud-backfill-apply: same as cloud-backfill but executes (typed confirmations)"
 	@echo ""
 	@echo "  help        : This help"
